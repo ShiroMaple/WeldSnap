@@ -1,0 +1,40 @@
+name: Deploy WeldSnap to Server
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Sync Files to Web Directory
+        run: |
+          # 确保目标部署目录存在
+          mkdir -p /var/www/WeldSnap
+          # 同步文件，排除数据库、上传照片、依赖包、运行配置以及 Git 目录
+          rsync -av --delete \
+            --exclude='data' \
+            --exclude='exports' \
+            --exclude='node_modules' \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='config.json' \
+            ./ /var/www/WeldSnap/
+
+      - name: Install Dependencies and Restart Server
+        env:
+          RUNNER_TRACKING_ID: to-prevent-killing  # 必须配置，防止 GitHub Actions 完成后杀掉 PM2 守护的 Node 后台进程
+        run: |
+          cd /var/www/WeldSnap
+          # 使用 pnpm 安装依赖
+          pnpm install
+          # 使用 PM2 重启服务（并配置独立的 Node.js v22 路径以支持 sqlite 模块）
+          pm2 delete weld-photo-system || true
+          pm2 start server.js --name weld-photo-system --interpreter /opt/node-v22/bin/node --node-args="--experimental-sqlite"
+          pm2 save
