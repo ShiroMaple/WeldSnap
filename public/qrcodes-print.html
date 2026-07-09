@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>二维码打印 - 焊口照片录入系统</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    body { background: #fff; padding: 20px; }
+    .print-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    .print-header h1 { font-size: 20px; }
+    .qr-grid { display: flex; flex-wrap: wrap; gap: 16px; justify-content: center; }
+    .qr-card { text-align: center; border: 2px solid #333; padding: 16px; border-radius: 8px; page-break-inside: avoid; }
+    .qr-card img { width: 200px; height: 200px; }
+    .qr-card .pipeline-label { font-size: 18px; font-weight: 700; margin-top: 8px; }
+    .qr-card .url-label { font-size: 9px; color: #999; margin-top: 4px; word-break: break-all; }
+    .loading { text-align: center; padding: 40px; color: #999; }
+    .no-print { margin-bottom: 16px; }
+    @media print { .no-print { display: none; } .qr-card { border-color: #000; } }
+  </style>
+</head>
+<body>
+  <div class="no-print print-header">
+    <h1>管线号二维码 - 打印页</h1>
+    <div>
+      <button class="btn btn-primary btn-sm" onclick="window.print()">打印</button>
+      <button class="btn btn-outline btn-sm" onclick="window.close()">关闭</button>
+    </div>
+  </div>
+  <div id="content" class="loading">加载中...</div>
+
+  <script>
+    (async function() {
+      // 检查登录
+      try {
+        const resp = await fetch('/api/auth/check');
+        const data = await resp.json();
+        if (!data.logged_in || data.user.role !== 'admin') {
+          window.location.href = '/login.html';
+          return;
+        }
+      } catch { window.location.href = '/login.html'; return; }
+
+      try {
+        const resp = await fetch('/api/admin/qrcodes');
+        const data = await resp.json();
+        const content = document.getElementById('content');
+        if (data.success && data.items.length > 0) {
+          content.className = 'qr-grid';
+          content.innerHTML = data.items.map(item => `
+            <div class="qr-card">
+              <img src="${item.qr}" alt="${item.pipeline_no}">
+              <div class="pipeline-label">管线号: ${item.pipeline_no}</div>
+              <div class="url-label">${item.url}</div>
+            </div>
+          `).join('');
+        } else {
+          content.innerHTML = '<p style="text-align:center;color:#999;">暂无管线数据，请先在管理后台导入Excel</p>';
+        }
+      } catch (e) {
+        document.getElementById('content').innerHTML = '<p style="color:#f00;">加载失败: ' + e.message + '</p>';
+      }
+    })();
+  </script>
+</body>
+</html>
