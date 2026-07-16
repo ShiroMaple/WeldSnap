@@ -1,17 +1,30 @@
 {
-  "name": "weld-photo-system",
-  "version": "1.0.0",
-  "description": "管道焊口工序照片录入系统",
-  "main": "server.js",
+  "name": "weldsnap",
+  "version": "2.0.0",
+  "private": true,
+  "description": "管道焊口工序照片结构化录入系统 V2.0",
   "scripts": {
-    "start": "node --experimental-sqlite server.js"
+    "dev": "cross-env NODE_OPTIONS=--experimental-sqlite next dev -H 0.0.0.0",
+    "build": "cross-env NODE_OPTIONS=--experimental-sqlite next build",
+    "start": "node --experimental-sqlite .next/standalone/server.js",
+    "lint": "next lint"
   },
   "dependencies": {
+    "ali-oss": "^6.21.0",
     "bcryptjs": "^2.4.3",
-    "express": "^4.21.0",
-    "express-session": "^1.18.1",
-    "multer": "^1.4.5-lts.1",
+    "next": "^15.3.0",
+    "pino": "^9.6.0",
+    "pino-pretty": "^13.0.0",
+    "pino-roll": "^2.1.0",
     "qrcode": "^1.5.4",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
     "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.0",
+    "cross-env": "^7.0.3",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^4.1.0"
   }
 }

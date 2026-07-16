@@ -1,0 +1,135 @@
+/*
+ * WeldSnap V2.0 — IBM Carbon Design System Token Layer
+ *
+ * Tailwind CSS v4 + Carbon 语义化设计令牌。
+ * 所有颜色、字体、间距均来源于 DESIGN_IBM.md 规范文档。
+ *
+ * 核心约束：
+ *   - border-radius: 0px（绝对矩形，Carbon 签名特征）
+ *   - box-shadow: 禁止（深度通过背景色分层呈现）
+ *   - 字重仅 300 / 400 / 600（禁止 700 Bold）
+ *   - 唯一交互色: IBM Blue 60 (#0f62fe)
+ */
+
+@import "tailwindcss";
+
+/* ─── IBM Carbon Design Tokens ─────────────────────────── */
+@theme {
+  /* === 背景层级 === */
+  --color-canvas: #ffffff;
+  --color-layer-01: #f4f4f4;
+  --color-layer-02: #e0e0e0;
+  --color-layer-01-hover: #e8e8e8;
+
+  /* === 唯一交互色 (IBM Blue) === */
+  --color-interactive: #0f62fe;
+  --color-interactive-hover: #0353e9;
+  --color-interactive-active: #002d9c;
+  --color-blue-10: #edf5ff;
+
+  /* === 文本色彩 === */
+  --color-text-primary: #161616;
+  --color-text-secondary: #525252;
+  --color-text-placeholder: #6f6f6f;
+  --color-text-disabled: #8d8d8d;
+  --color-text-on-color: #ffffff;
+
+  /* === 边框 === */
+  --color-border-subtle: #c6c6c6;
+  --color-border-strong: #e0e0e0;
+
+  /* === 状态色 === */
+  --color-support-error: #da1e28;
+  --color-support-error-hover: #b81921;
+  --color-support-success: #24a148;
+  --color-support-warning: #f1c21b;
+  --color-support-info: #0f62fe;
+
+  /* === 焦点环 === */
+  --color-focus: #0f62fe;
+
+  /* === 按钮 — 二级 & 危险 === */
+  --color-button-secondary: #393939;
+  --color-button-secondary-hover: #4c4c4c;
+  --color-button-danger: #da1e28;
+  --color-button-danger-hover: #b81921;
+
+  /* === 导航栏 === */
+  --color-nav-bg: #161616;
+  --color-nav-text: #c6c6c6;
+  --color-nav-text-hover: #ffffff;
+
+  /* === 字体族 === */
+  /* next/font 注入 CSS 变量，此处引用并添加系统回退 */
+  --font-sans: var(--font-plex-sans), 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: var(--font-plex-mono), Menlo, Courier, monospace;
+}
+
+/* ─── 全局重置 ─────────────────────────────────────────── */
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: 0.875rem; /* 14px — Carbon Body Short 01 */
+  font-weight: 400;
+  line-height: 1.29; /* 18px — Carbon productive line-height */
+  letter-spacing: 0.16px; /* Carbon 14px 微追踪 */
+  color: var(--color-text-primary);
+  background-color: var(--color-canvas);
+}
+
+/* ─── Carbon 排版比例尺 ──────────────────────────────────
+ *
+ * Display:   60px / 48px  — weight 300 (Light), line-height 1.17
+ * Heading:   42px → 20px  — weight 300~600
+ * Body:      16px / 14px  — weight 400/600
+ * Caption:   12px         — weight 400, letter-spacing 0.32px
+ * Code:      14px / 16px  — IBM Plex Mono
+ */
+
+/* ─── Carbon 按钮基底 ───────────────────────────────────
+ *
+ * Carbon 按钮签名特征：
+ *   - 0px border-radius（绝对矩形）
+ *   - 48px 默认高度
+ *   - 非对称 padding（右侧留空给尾随图标）
+ */
+
+/* ─── 链接 ─────────────────────────────────────────────── */
+a {
+  color: var(--color-interactive);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--color-interactive-hover);
+  text-decoration: underline;
+}
+
+/* ─── 焦点环（Carbon 签名） ─────────────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -2px;
+}
+
+/* ─── 滚动条（精简） ─────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-layer-01);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-subtle);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-disabled);
+}
