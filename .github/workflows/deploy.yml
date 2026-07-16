@@ -13,11 +13,26 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      - name: Setup Node.js v22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Install Dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Next.js Standalone
+        run: pnpm build
+
       - name: Sync Files to Web Directory
         run: |
-          # 确保目标部署目录存在
-          mkdir -p /var/www/WeldSnap
-          # 同步文件，排除数据库、上传照片、依赖包、运行配置以及 Git 目录
+          DEPLOY_DIR=/var/www/WeldSnap
+          mkdir -p "$DEPLOY_DIR"
+
+          # 同步源码和构建产物，排除持久化数据和开发产物
           rsync -av --delete \
             --exclude='data' \
             --exclude='exports' \
@@ -25,16 +40,29 @@ jobs:
             --exclude='.git' \
             --exclude='.github' \
             --exclude='config.json' \
-            ./ /var/www/WeldSnap/
+            --exclude='.next/cache' \
+            ./ "$DEPLOY_DIR/"
+
+          # Next.js standalone 需要静态资源和 public 目录
+          mkdir -p "$DEPLOY_DIR/.next/standalone/public"
+          cp -r public/* "$DEPLOY_DIR/.next/standalone/public/" 2>/dev/null || true
+          mkdir -p "$DEPLOY_DIR/.next/standalone/.next/static"
+          cp -r .next/static/* "$DEPLOY_DIR/.next/standalone/.next/static/" 2>/dev/null || true
+
+          # 确保持久化目录存在
+          mkdir -p "$DEPLOY_DIR/data"
+          mkdir -p "$DEPLOY_DIR/exports"
 
       - name: Install Dependencies and Restart Server
         env:
-          RUNNER_TRACKING_ID: to-prevent-killing  # 必须配置，防止 GitHub Actions 完成后杀掉 PM2 守护的 Node 后台进程
+          RUNNER_TRACKING_ID: to-prevent-killing  # 防止 GitHub Actions 完成后杀掉 PM2 守护的 Node 后台进程
         run: |
           cd /var/www/WeldSnap
-          # 使用 pnpm 安装依赖
-          pnpm install
-          # 使用 PM2 重启服务（并配置独立的 Node.js v22 路径以支持 sqlite 模块）
+          pnpm install --frozen-lockfile
+          # PM2 重启 Next.js standalone 服务（非 V1 Express server.js）
           pm2 delete weld-photo-system || true
-          pm2 start server.js --name weld-photo-system --interpreter /opt/node-v22/bin/node --node-args="--experimental-sqlite"
+          pm2 start .next/standalone/server.js \
+            --name weld-photo-system \
+            --interpreter /opt/node-v22/bin/node \
+            --node-args="--experimental-sqlite"
           pm2 save
