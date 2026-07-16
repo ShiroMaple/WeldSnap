@@ -300,7 +300,7 @@ export default function AdminPage() {
       {/* 顶部 Tab 选项导航 (三栏化整合) */}
       <nav className="flex border-b border-[#e0e0e0] px-6 select-none bg-white">
         {[
-          { id: 'dashboard', name: '生产控制大盘' },
+          { id: 'dashboard', name: '管道焊口总览' },
           { id: 'users', name: '成员管理' },
           { id: 'settings', name: '系统设置' },
         ].map((tab) => (
@@ -415,7 +415,13 @@ export default function AdminPage() {
 
                 {/* 视图内容切换 */}
                 {rightView === 'matrix' ? (
-                  <WeldMatrix records={weldRecords} />
+                  <WeldMatrix
+                    records={weldRecords}
+                    onRefresh={() => {
+                      fetchRecords(selectedPipeline);
+                      fetchStats();
+                    }}
+                  />
                 ) : (
                   <div className="p-6 overflow-y-auto h-full min-h-0 bg-white">
                     <OSSFileTree />

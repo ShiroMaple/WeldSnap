@@ -161,16 +161,28 @@ function UploadContent() {
     // 查找当前选中焊口已有的照片路径
     const found = weldsList.find((w) => w.weld_no === weldNo);
     if (found) {
-      const initialPhotos = {
-        zudui: found.photo_zudui || null,
-        dadi: found.photo_dadi || null,
-        gaimian: found.photo_gaimian || null,
+      const getPhotoStatus = (path) => {
+        if (!path) return { isDone: false, label: '未上传', path: null };
+        if (path.startsWith('REJECTED:')) {
+          return { isDone: false, label: '需重传', path: null };
+        }
+        return { isDone: true, label: '已上传', path: path };
       };
-      setUploadedPhotos(initialPhotos);
+
+      const statusZudui = getPhotoStatus(found.photo_zudui);
+      const statusDadi = getPhotoStatus(found.photo_dadi);
+      const statusGaimian = getPhotoStatus(found.photo_gaimian);
+
+      setUploadedPhotos({
+        zudui: statusZudui.path,
+        dadi: statusDadi.path,
+        gaimian: statusGaimian.path,
+      });
+
       setStatusMsg({
-        zudui: found.photo_zudui ? '已上传' : '未上传',
-        dadi: found.photo_dadi ? '已上传' : '未上传',
-        gaimian: found.photo_gaimian ? '已上传' : '未上传',
+        zudui: statusZudui.label,
+        dadi: statusDadi.label,
+        gaimian: statusGaimian.label,
       });
     }
   };
@@ -401,7 +413,10 @@ function UploadContent() {
                 >
                   <option value="">请选择焊口号</option>
                   {weldsList.map((w) => {
-                    const isAllDone = w.photo_zudui && w.photo_dadi && w.photo_gaimian;
+                    const isAllDone =
+                      w.photo_zudui && !w.photo_zudui.startsWith('REJECTED:') &&
+                      w.photo_dadi && !w.photo_dadi.startsWith('REJECTED:') &&
+                      w.photo_gaimian && !w.photo_gaimian.startsWith('REJECTED:');
                     return (
                       <option key={w.id} value={w.weld_no} disabled={isAllDone}>
                         {w.weld_no} {isAllDone ? '(已完工)' : ''}
@@ -421,11 +436,16 @@ function UploadContent() {
                   const loadingState = isSubmitting[type.id];
                   const isDone = !!path;
 
+                  // 检查数据库原始记录中是否存在被驳回的照片
+                  const activeWeldRecord = weldsList.find((w) => w.weld_no === selectedWeld);
+                  const rawPath = activeWeldRecord ? activeWeldRecord[`photo_${type.id}`] : null;
+                  const isRejected = rawPath && rawPath.startsWith('REJECTED:');
+
                   return (
                     <div
                       key={type.id}
                       className={`border p-4 bg-white rounded-none flex items-center justify-between transition-colors duration-150
-                        ${isDone ? 'border-[#24a148]' : 'border-[#e0e0e0]'}
+                        ${isDone ? 'border-[#24a148]' : isRejected ? 'border-[#da1e28]' : 'border-[#e0e0e0]'}
                       `}
                     >
                       <div className="flex-1 min-w-0 mr-4">
@@ -435,6 +455,8 @@ function UploadContent() {
                             ${
                               isDone
                                 ? 'text-[#24a148]'
+                                : isRejected
+                                ? 'text-[#da1e28] font-medium animate-pulse'
                                 : loadingState
                                 ? 'text-[#0f62fe] font-medium'
                                 : 'text-[#8d8d8d]'
@@ -452,6 +474,20 @@ function UploadContent() {
                               alt={type.label}
                               className="max-w-full max-h-full object-contain"
                             />
+                          </div>
+                        )}
+
+                        {/* 如果被标记不合格，则呈现被驳回照片预览 */}
+                        {isRejected && !isDone && (
+                          <div className="mt-3">
+                            <span className="text-[11px] text-[#da1e28] block mb-1">⚠️ 照片不合格需重传。不合格照片预览：</span>
+                            <div className="w-32 h-24 bg-[#f4f4f4] border border-[#da1e28] overflow-hidden flex items-center justify-center">
+                              <img
+                                src={`/api/photo/preview?path=${encodeURIComponent(rawPath)}`}
+                                alt="不合格预览"
+                                className="max-w-full max-h-full object-contain"
+                              />
+                            </div>
                           </div>
                         )}
                       </div>
@@ -474,12 +510,14 @@ function UploadContent() {
                           ${
                             isDone
                               ? 'border-[#c6c6c6] bg-white hover:bg-[#f4f4f4] text-[#161616]'
+                              : isRejected
+                              ? 'border-transparent bg-[#da1e28] hover:bg-[#b21922] text-white font-medium'
                               : 'border-transparent bg-[#0f62fe] hover:bg-[#0353e9] text-white font-medium'
                           }
                           disabled:bg-[#8d8d8d] disabled:cursor-not-allowed
                         `}
                       >
-                        {isDone ? '重新拍照' : '拍照上传'}
+                        {isDone ? '重新拍照' : isRejected ? '重传照片' : '拍照上传'}
                       </button>
                     </div>
                   );

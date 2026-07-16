@@ -58,11 +58,11 @@ export default function AdminLayout({ children }) {
       {/* 顶层 Masthead 导航栏 (IBM Carbon style: #161616, 48px height) */}
       <header className="h-12 bg-[#161616] text-[#ffffff] px-6 flex items-center justify-between select-none">
         <div className="flex items-center gap-4">
-          <span className="font-semibold text-[16px] tracking-[0.16px]">WeldSnap</span>
+          <span className="font-semibold text-[16px] tracking-[0.16px]">建安管道焊口工序质量记录 WeldSnap</span>
           <span className="h-4 w-[1px] bg-[#393939]" />
           <span className="text-[14px] text-[#c6c6c6] font-light">管理控制台</span>
         </div>
-        
+
         <div className="flex items-center gap-6 text-[13px]">
           <div className="flex items-center gap-2">
             <span className="text-[#c6c6c6]">当前用户:</span>

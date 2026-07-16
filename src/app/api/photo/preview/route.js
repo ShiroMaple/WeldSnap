@@ -15,10 +15,15 @@ async function handler(request) {
   requireAuth(request);
 
   const { searchParams } = new URL(request.url);
-  const objectKey = searchParams.get('path');
+  let objectKey = searchParams.get('path');
 
   if (!objectKey) {
     return Response.json({ success: false, error: '缺少 path 参数' }, { status: 400 });
+  }
+
+  // 如果带有 REJECTED: 前缀，将其剥离以获取真实的 OSS 路径
+  if (objectKey.startsWith('REJECTED:')) {
+    objectKey = objectKey.substring(9);
   }
 
   // 安全检查：防止访问 projects/ 目录之外的数据
