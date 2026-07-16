@@ -1,6 +1,6 @@
 /**
- * 获取全部管线二维码接口 (打印页数据)
- * GET /api/admin/qrcodes
+ * 获取批量打印管线二维码数据接口 (基于 UUID 与项目联动)
+ * GET /api/admin/qrcodes?project_uuid=...&uuids=...
  */
 
 const { withTrace } = require('../../../../middleware/withTrace');
@@ -12,10 +12,26 @@ const QRCode = require('qrcode');
 async function handler(request) {
   requireAdmin(request);
 
-  // 1. 获取所有管线数据
-  const pipelines = db.getAllPipelines();
+  const { searchParams } = new URL(request.url);
+  const projectUuid = searchParams.get('project_uuid');
+  const uuidsParam = searchParams.get('uuids'); // 逗号分隔的管线 UUID 列表
 
-  // 2. 获取局域网 IP 与端口
+  let pipelines = [];
+
+  if (uuidsParam) {
+    const list = uuidsParam.split(',');
+    for (const uuid of list) {
+      const p = db.getPipelineByUuid(uuid);
+      if (p) pipelines.push(p);
+    }
+  } else if (projectUuid) {
+    // 默认获取该项目下的全量管线
+    pipelines = db.listPipelines(projectUuid);
+  } else {
+    return Response.json({ success: false, error: '缺少 project_uuid 或 uuids 参数' }, { status: 400 });
+  }
+
+  // 获取局域网 IP 与端口
   const ips = getLocalIPs();
   const ip = ips[0] || 'localhost';
   const port = process.env.PORT || 3000;
@@ -23,7 +39,7 @@ async function handler(request) {
   const items = [];
   try {
     for (const p of pipelines) {
-      const url = `http://${ip}:${port}/upload?pipeline=${encodeURIComponent(p.pipeline_no)}`;
+      const url = `http://${ip}:${port}/upload?pipeline_uuid=${p.uuid}`;
       const qr = await QRCode.toDataURL(url, { width: 250, margin: 1 });
       items.push({
         pipeline_no: p.pipeline_no,
@@ -44,4 +60,3 @@ async function handler(request) {
 }
 
 export const GET = withTrace(handler);
-

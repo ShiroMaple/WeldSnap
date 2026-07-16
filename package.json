@@ -12,6 +12,8 @@
   "dependencies": {
     "ali-oss": "^6.21.0",
     "bcryptjs": "^2.4.3",
+    "file-saver": "^2.0.5",
+    "jszip": "^3.10.1",
     "next": "^15.3.0",
     "pino": "^9.6.0",
     "pino-pretty": "^13.0.0",

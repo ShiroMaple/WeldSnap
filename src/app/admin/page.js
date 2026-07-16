@@ -4,28 +4,56 @@
  * 管理后台主控制台页面 (Client Component)
  *
  * 经典 IBM Carbon 宽屏矩阵拓扑布局重构版：
- *   - 顶层 Tab 简化为三大日常面板：生产控制大盘 (dashboard)、成员管理 (users)、系统设置 (settings)
- *   - 【生产控制大盘】高度集成：
- *     - 顶部：看板数据看板 StatsBar
- *     - 大分幅区：左 1/4 PipelineTree 导航树 + 右 3/4 核心工作区
- *     - 导航树内置：导入 Excel 弹窗触发、批量打印链接、每行 Hover 二维码弹窗查看 [QR]
- *     - 右侧工作区内置视图切换 Toggle：无缝切换【焊口矩阵列表视图】与【云端 OSS 目录树浏览器】
+ *   - 顶层 Tab 简化为三大日常面板：管道焊口总览 (dashboard)、成员管理 (users)、系统设置 (settings)
+ *   - 【管道焊口总览】管理的起点是项目：
+ *     - 未选中项目时：展示全局项目列表，支持按施工号/名称过滤与按创建时间排序，管理员可增删改项目。
+ *     - 选中项目后：列表收起，顶部展示面包屑导航“项目控制台 / 🏗️ 施工号: XXX (XXX)”。
+ *       展示看板数据 StatsBar，左侧 PipelineTree + 右侧 WeldMatrix。
+ *       支持直接网页端扫码、直传、驳回重传、批量删除熔断和 JSZip+FileSaver 客户端零服务器负载批量打包。
  */
 
 import { useState, useEffect } from 'react';
 import StatsBar from '@/components/StatsBar';
 import PipelineTree from '@/components/PipelineTree';
 import WeldMatrix from '@/components/WeldMatrix';
-import OSSFileTree from '@/components/OSSFileTree';
 
 export default function AdminPage() {
   const [activeTab, setActiveTab] = useState('dashboard'); // dashboard, users, settings
-  const [rightView, setRightView] = useState('matrix'); // matrix, oss (控制大盘右侧视图)
 
-  // ─── 全局数据状态 ───────────────────────────────────────
+  // ─── 用户角色状态 ───────────────────────────────────────
+  const [currentUser, setCurrentUser] = useState(null);
+
+  // ─── 项目相关状态 ───────────────────────────────────────
+  const [projectsList, setProjectsList] = useState([]);
+  const [selectedProjectUuid, setSelectedProjectUuid] = useState('');
+  const [selectedProject, setSelectedProject] = useState(null);
+
+  // 项目过滤与排序
+  const [filterProjectQuery, setFilterProjectQuery] = useState('');
+  const [sortProjectOrder, setSortProjectOrder] = useState('created_desc'); // created_desc, created_asc, name
+
+  // 项目弹窗
+  const [showAddProjectModal, setShowAddProjectModal] = useState(false);
+  const [newConstructionNo, setNewConstructionNo] = useState('');
+  const [newProjectName, setNewProjectName] = useState('');
+  const [newRemark, setNewRemark] = useState('');
+  const [newPipelinePrefix, setNewPipelinePrefix] = useState('');
+  const [newWeldPrefix, setNewWeldPrefix] = useState('');
+
+  const [showEditProjectModal, setShowEditProjectModal] = useState(false);
+  const [editProjectUuid, setEditProjectUuid] = useState('');
+  const [editConstructionNo, setEditConstructionNo] = useState('');
+  const [editProjectName, setEditProjectName] = useState('');
+  const [editRemark, setEditRemark] = useState('');
+  const [editPipelinePrefix, setEditPipelinePrefix] = useState('');
+  const [editWeldPrefix, setEditWeldPrefix] = useState('');
+  const [editProjectStatus, setEditProjectStatus] = useState('进行中');
+
+  // ─── 项目级详情状态 ─────────────────────────────────────
   const [stats, setStats] = useState({ total: 0, completed: 0, pending: 0 });
   const [pipelines, setPipelines] = useState([]);
-  const [selectedPipeline, setSelectedPipeline] = useState('');
+  const [selectedPipelineUuid, setSelectedPipelineUuid] = useState('');
+  const [selectedPipelineNo, setSelectedPipelineNo] = useState('');
   const [weldRecords, setWeldRecords] = useState([]);
 
   // 焊口过滤条件
@@ -42,8 +70,9 @@ export default function AdminPage() {
   const [importStatus, setImportStatus] = useState('');
   const [importResult, setImportResult] = useState(null);
 
-  // 2. 单个二维码查看弹窗
+  // 2. 单个管线二维码查看弹窗
   const [showQRModal, setShowQRModal] = useState(false);
+  const [qrPipelineUuid, setQrPipelineUuid] = useState('');
   const [qrPipelineNo, setQrPipelineNo] = useState('');
   const [qrLoading, setQrLoading] = useState(false);
   const [qrData, setQrData] = useState({ qr: '', url: '' });
@@ -64,39 +93,71 @@ export default function AdminPage() {
   const [editRole, setEditRole] = useState('worker');
 
   // ─── 数据拉取 ──────────────────────────────────────────
-  const fetchStats = async () => {
+  const fetchAuth = async () => {
     try {
-      const resp = await fetch('/api/admin/stats');
+      const resp = await fetch('/api/auth/check');
+      const data = await resp.json();
+      if (!data.logged_in || data.user.role !== 'admin') {
+        window.location.href = '/login';
+        return;
+      }
+      setCurrentUser(data.user);
+    } catch {
+      window.location.href = '/login';
+    }
+  };
+
+  const fetchProjects = async () => {
+    try {
+      const resp = await fetch('/api/admin/projects');
+      const data = await resp.json();
+      if (resp.ok && data.success) {
+        setProjectsList(data.projects || []);
+      }
+    } catch {}
+  };
+
+  const fetchStats = async (projectUuid) => {
+    if (!projectUuid) return;
+    try {
+      const resp = await fetch(`/api/admin/stats?project_uuid=${projectUuid}`);
       const data = await resp.json();
       if (resp.ok && data.success) setStats(data.stats);
     } catch {}
   };
 
-  const fetchPipelines = async () => {
+  const fetchPipelines = async (projectUuid) => {
+    if (!projectUuid) return;
     try {
-      const resp = await fetch('/api/admin/pipelines');
+      const resp = await fetch(`/api/admin/pipelines?project_uuid=${projectUuid}`);
       const data = await resp.json();
       if (resp.ok && data.success) {
-        setPipelines(data.pipelines);
-        // 如果当前没有选中管线，默认选中第一个
-        if (data.pipelines.length > 0 && !selectedPipeline) {
-          setSelectedPipeline(data.pipelines[0].pipeline_no);
+        setPipelines(data.pipelines || []);
+        
+        // 如果当前没有选中管线，且有管线数据，默认选中第一个
+        if (data.pipelines && data.pipelines.length > 0 && !selectedPipelineUuid) {
+          const first = data.pipelines[0];
+          setSelectedPipelineUuid(first.uuid);
+          setSelectedPipelineNo(first.pipeline_no);
         }
       }
     } catch {}
   };
 
-  const fetchRecords = async (pipelineNo) => {
-    if (!pipelineNo) return;
+  const fetchRecords = async (pipelineUuid) => {
+    if (!pipelineUuid) {
+      setWeldRecords([]);
+      return;
+    }
     const params = new URLSearchParams();
-    params.set('pipeline_no', pipelineNo);
+    params.set('pipeline_uuid', pipelineUuid);
     if (filterWeld) params.set('weld_no', filterWeld);
     if (filterStatus) params.set('status', filterStatus);
 
     try {
       const resp = await fetch(`/api/admin/records?${params.toString()}`);
       const data = await resp.json();
-      if (resp.ok && data.success) setWeldRecords(data.records);
+      if (resp.ok && data.success) setWeldRecords(data.records || []);
     } catch {}
   };
 
@@ -104,7 +165,7 @@ export default function AdminPage() {
     try {
       const resp = await fetch('/api/admin/users');
       const data = await resp.json();
-      if (resp.ok && data.success) setUsers(data.users);
+      if (resp.ok && data.success) setUsers(data.users || []);
     } catch {}
   };
 
@@ -118,31 +179,161 @@ export default function AdminPage() {
 
   // ─── 联动拉取 ──────────────────────────────────────────
   useEffect(() => {
+    fetchAuth();
+  }, []);
+
+  useEffect(() => {
     if (activeTab === 'dashboard') {
-      fetchStats();
-      fetchPipelines();
+      fetchProjects();
+      if (selectedProjectUuid) {
+        fetchStats(selectedProjectUuid);
+        fetchPipelines(selectedProjectUuid);
+      }
     } else if (activeTab === 'users') {
       fetchUsers();
     } else if (activeTab === 'settings') {
       fetchSettings();
     }
-  }, [activeTab]);
+  }, [activeTab, selectedProjectUuid]);
 
   useEffect(() => {
-    if (selectedPipeline) {
-      fetchRecords(selectedPipeline);
+    if (selectedPipelineUuid) {
+      fetchRecords(selectedPipelineUuid);
+    } else {
+      setWeldRecords([]);
     }
-  }, [selectedPipeline, filterWeld, filterStatus]);
+  }, [selectedPipelineUuid, filterWeld, filterStatus]);
 
-  // ─── 单个二维码弹窗加载 ──────────────────────────────────
-  const handleOpenQRModal = async (pipelineNo) => {
-    setQrPipelineNo(pipelineNo);
+  // ─── 项目增删改操作 ──────────────────────────────────────
+  const handleSelectProject = (project) => {
+    setSelectedProjectUuid(project.uuid);
+    setSelectedProject(project);
+    setSelectedPipelineUuid('');
+    setSelectedPipelineNo('');
+    setWeldRecords([]);
+    setFilterWeld('');
+    setFilterStatus('');
+  };
+
+  const handleBackToProjectConsole = () => {
+    setSelectedProjectUuid('');
+    setSelectedProject(null);
+    setSelectedPipelineUuid('');
+    setSelectedPipelineNo('');
+    setWeldRecords([]);
+    fetchProjects();
+  };
+
+  const handleAddProject = async (e) => {
+    e.preventDefault();
+    if (!newConstructionNo.trim() || !newProjectName.trim()) {
+      alert('施工号和项目名称为必填项');
+      return;
+    }
+
+    try {
+      const resp = await fetch('/api/admin/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          construction_no: newConstructionNo,
+          project_name: newProjectName,
+          remark: newRemark,
+          pipeline_prefix: newPipelinePrefix,
+          weld_prefix: newWeldPrefix,
+        }),
+      });
+      const data = await resp.json();
+      if (resp.ok && data.success) {
+        setShowAddProjectModal(false);
+        setNewConstructionNo('');
+        setNewProjectName('');
+        setNewRemark('');
+        setNewPipelinePrefix('');
+        setNewWeldPrefix('');
+        fetchProjects();
+      } else {
+        alert(data.error || '添加失败');
+      }
+    } catch {
+      alert('网络连接错误');
+    }
+  };
+
+  const handleOpenEditProject = (p, e) => {
+    e.stopPropagation(); // 阻止触发选中项目
+    setEditProjectUuid(p.uuid);
+    setEditConstructionNo(p.construction_no);
+    setEditProjectName(p.project_name);
+    setEditRemark(p.remark || '');
+    setEditPipelinePrefix(p.pipeline_prefix || '');
+    setEditWeldPrefix(p.weld_prefix || '');
+    setEditProjectStatus(p.status || '进行中');
+    setShowEditProjectModal(true);
+  };
+
+  const handleEditProject = async (e) => {
+    e.preventDefault();
+    if (!editConstructionNo.trim() || !editProjectName.trim()) {
+      alert('施工号和项目名称为必填项');
+      return;
+    }
+
+    try {
+      const resp = await fetch(`/api/admin/projects/${editProjectUuid}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          construction_no: editConstructionNo,
+          project_name: editProjectName,
+          remark: editRemark,
+          pipeline_prefix: editPipelinePrefix,
+          weld_prefix: editWeldPrefix,
+          status: editProjectStatus,
+        }),
+      });
+      const data = await resp.json();
+      if (resp.ok && data.success) {
+        setShowEditProjectModal(false);
+        fetchProjects();
+      } else {
+        alert(data.error || '修改失败');
+      }
+    } catch {
+      alert('网络连接错误');
+    }
+  };
+
+  const handleDeleteProject = async (uuid, e) => {
+    e.stopPropagation();
+    if (!confirm('💥 警告：删除项目将彻底删除其包含的全部管线、焊口以及绑定的照片映射！此操作无法恢复。确认删除？')) return;
+
+    try {
+      const resp = await fetch(`/api/admin/projects/${uuid}`, { method: 'DELETE' });
+      const data = await resp.json();
+      if (resp.ok && data.success) {
+        fetchProjects();
+      } else {
+        alert(data.error || '删除项目失败');
+      }
+    } catch {
+      alert('网络连接错误');
+    }
+  };
+
+  // ─── 二维码弹窗加载 ─────────────────────────────────────
+  const handleOpenQRModal = async (pipelineUuid) => {
+    const pipeline = pipelines.find(p => p.uuid === pipelineUuid);
+    if (!pipeline) return;
+
+    setQrPipelineUuid(pipelineUuid);
+    setQrPipelineNo(pipeline.pipeline_no);
     setQrLoading(true);
     setQrData({ qr: '', url: '' });
     setShowQRModal(true);
 
     try {
-      const resp = await fetch(`/api/admin/qrcode/${encodeURIComponent(pipelineNo)}`);
+      const resp = await fetch(`/api/admin/qrcode/${encodeURIComponent(pipelineUuid)}`);
       const data = await resp.json();
       if (resp.ok && data.success) {
         setQrData({ qr: data.qr, url: data.url });
@@ -169,13 +360,14 @@ export default function AdminPage() {
   // ─── Excel 导入逻辑 ─────────────────────────────────────
   const handleImportExcel = async (e) => {
     const file = e.target.files[0];
-    if (!file) return;
+    if (!file || !selectedProjectUuid) return;
 
     setImportStatus('正在解析并导入数据，请稍候...');
     setImportResult(null);
 
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('project_uuid', selectedProjectUuid);
 
     try {
       const resp = await fetch('/api/admin/import', {
@@ -192,9 +384,9 @@ export default function AdminPage() {
           inserted: data.inserted,
           skipped: data.skipped,
         });
-        // 自动刷新大盘及管线
-        fetchStats();
-        fetchPipelines();
+        // 刷新大盘
+        fetchStats(selectedProjectUuid);
+        fetchPipelines(selectedProjectUuid);
       } else {
         setImportResult({
           success: false,
@@ -208,7 +400,7 @@ export default function AdminPage() {
     e.target.value = '';
   };
 
-  // ─── 成员管理逻辑 ───────────────────────────────────────
+  // ─── 成员管理逻辑 ──────────────────────────────────────
   const handleAddUser = async (e) => {
     e.preventDefault();
     if (!newUsername || !newPassword) {
@@ -295,6 +487,23 @@ export default function AdminPage() {
     }
   };
 
+  // ─── 项目过滤与排序计算 ──────────────────────────────────
+  const filteredProjects = projectsList.filter(p => {
+    const q = filterProjectQuery.trim().toLowerCase();
+    return p.construction_no.toLowerCase().includes(q) || p.project_name.toLowerCase().includes(q);
+  });
+
+  const sortedProjects = [...filteredProjects].sort((a, b) => {
+    if (sortProjectOrder === 'created_desc') {
+      return new Date(b.created_at) - new Date(a.created_at);
+    } else if (sortProjectOrder === 'created_asc') {
+      return new Date(a.created_at) - new Date(b.created_at);
+    } else if (sortProjectOrder === 'name') {
+      return a.project_name.localeCompare(b.project_name, 'zh-CN');
+    }
+    return 0;
+  });
+
   return (
     <div className="flex-1 flex flex-col h-[calc(100vh-48px)] overflow-hidden font-sans bg-white">
       {/* 顶部 Tab 选项导航 (三栏化整合) */}
@@ -321,122 +530,271 @@ export default function AdminPage() {
       </nav>
 
       {/* 主面板内容区 */}
-      <div className="flex-1 overflow-y-auto bg-white">
-        {/* Panel: 生产控制大盘 */}
+      <div className="flex-1 overflow-y-auto bg-white min-h-0">
+        
+        {/* Panel: 管道焊口总览 */}
         {activeTab === 'dashboard' && (
-          <div className="p-6 h-full flex flex-col min-h-0">
-            {/* 看板 */}
-            <StatsBar stats={stats} />
-
-            {/* 控制大盘分栏区 */}
-            <div className="flex-1 flex border border-[#e0e0e0] bg-white min-h-0">
-              {/* 左侧管线树导航 (整合了导入按钮、二维码弹窗逻辑) */}
-              <PipelineTree
-                pipelines={pipelines}
-                selectedPipeline={selectedPipeline}
-                onSelectPipeline={setSelectedPipeline}
-                onImportClick={() => {
-                  setImportResult(null);
-                  setImportStatus('');
-                  setShowImportModal(true);
-                }}
-                onShowQR={handleOpenQRModal}
-              />
-
-              {/* 右侧核心工作区 (整合了 WeldMatrix 和 OSSFileTree) */}
-              <div className="flex-1 flex flex-col min-h-0 bg-white">
-                {/* 顶部控制栏：提供列表视图与文件浏览器 Toggle 切换 */}
-                <div className="p-4 border-b border-[#e0e0e0] bg-[#f4f4f4] flex justify-between items-center flex-wrap select-none gap-4">
-                  {/* 视图切换 Toggle 键 */}
-                  <div className="flex border border-[#c6c6c6] bg-white">
-                    <button
-                      onClick={() => setRightView('matrix')}
-                      className={`h-8 px-4 text-[12px] cursor-pointer outline-none border-none transition-colors duration-150
-                        ${
-                          rightView === 'matrix'
-                            ? 'bg-[#0f62fe] text-white font-medium'
-                            : 'bg-transparent text-[#525252] hover:text-[#161616] hover:bg-[#e8e8e8]'
-                        }
-                      `}
-                    >
-                      焊口矩阵列表
-                    </button>
-                    <button
-                      onClick={() => setRightView('oss')}
-                      className={`h-8 px-4 text-[12px] cursor-pointer outline-none border-none transition-colors duration-150
-                        ${
-                          rightView === 'oss'
-                            ? 'bg-[#0f62fe] text-white font-medium'
-                            : 'bg-transparent text-[#525252] hover:text-[#161616] hover:bg-[#e8e8e8]'
-                        }
-                      `}
-                    >
-                      云端归档浏览器 (OSS)
-                    </button>
+          <div className="h-full flex flex-col min-h-0">
+            
+            {/* 项目未选中状态：展示全局项目面板 */}
+            {!selectedProjectUuid ? (
+              <div className="p-6 space-y-6 select-none">
+                
+                {/* 顶层面板标题 */}
+                <div className="flex justify-between items-center flex-wrap gap-4">
+                  <div>
+                    <h2 className="text-[22px] font-light text-[#161616]">管道项目控制台</h2>
+                    <p className="text-[13px] text-[#525252] mt-1">
+                      管理的起点是项目，您可以在此管理所有的施工号清单，并设定管线/焊口号的自增生成前缀。
+                    </p>
                   </div>
-
-                  {/* 针对列表视图展示过滤参数 */}
-                  {rightView === 'matrix' && (
-                    <div className="flex gap-4 items-center flex-wrap">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[12px] text-[#525252]">焊口号:</span>
-                        <input
-                          type="text"
-                          value={filterWeld}
-                          onChange={(e) => setFilterWeld(e.target.value)}
-                          placeholder="模糊搜索..."
-                          className="h-8 px-2 bg-white border border-[#c6c6c6] text-[13px] text-[#161616] outline-none focus:border-[#0f62fe] rounded-none placeholder-[#8d8d8d]"
-                        />
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[12px] text-[#525252]">状态:</span>
-                        <select
-                          value={filterStatus}
-                          onChange={(e) => setFilterStatus(e.target.value)}
-                          className="h-8 px-2 bg-white border border-[#c6c6c6] text-[13px] text-[#161616] outline-none focus:border-[#0f62fe] rounded-none cursor-pointer"
-                        >
-                          <option value="">全部状态</option>
-                          <option value="completed">已完成</option>
-                          <option value="pending">待录入</option>
-                        </select>
-                      </div>
-                      <button
-                        onClick={() => {
-                          setFilterWeld('');
-                          setFilterStatus('');
-                        }}
-                        className="h-8 px-4 border border-[#c6c6c6] bg-white hover:bg-[#e8e8e8] text-[12px] text-[#161616] cursor-pointer rounded-none font-medium"
-                      >
-                        重置筛选
-                      </button>
-                    </div>
-                  )}
+                  <button
+                    onClick={() => setShowAddProjectModal(true)}
+                    className="h-10 px-6 bg-[#0f62fe] hover:bg-[#0353e9] text-white text-[13px] cursor-pointer rounded-none border-none outline-none font-medium flex items-center gap-1"
+                  >
+                    <span>+</span> 新建项目
+                  </button>
                 </div>
 
-                {/* 视图内容切换 */}
-                {rightView === 'matrix' ? (
-                  <WeldMatrix
-                    records={weldRecords}
-                    onRefresh={() => {
-                      fetchRecords(selectedPipeline);
-                      fetchStats();
-                    }}
-                  />
-                ) : (
-                  <div className="p-6 overflow-y-auto h-full min-h-0 bg-white">
-                    <OSSFileTree />
+                {/* 搜索与过滤工具栏 */}
+                <div className="p-4 bg-[#f4f4f4] border border-[#e0e0e0] flex justify-between items-center flex-wrap gap-4">
+                  <div className="flex gap-4 items-center">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[12px] text-[#525252]">项目搜索:</span>
+                      <input
+                        type="text"
+                        value={filterProjectQuery}
+                        onChange={(e) => setFilterProjectQuery(e.target.value)}
+                        placeholder="搜索施工号或项目名称..."
+                        className="h-8 px-3 bg-white border border-[#c6c6c6] text-[13px] text-[#161616] outline-none focus:border-[#0f62fe] rounded-none w-56 placeholder-[#8d8d8d]"
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-[12px] text-[#525252]">创建排序:</span>
+                      <select
+                        value={sortProjectOrder}
+                        onChange={(e) => setSortProjectOrder(e.target.value)}
+                        className="h-8 px-2 bg-white border border-[#c6c6c6] text-[13px] outline-none focus:border-[#0f62fe] rounded-none cursor-pointer"
+                      >
+                        <option value="created_desc">按创建时间 (最新优先)</option>
+                        <option value="created_asc">按创建时间 (最早优先)</option>
+                        <option value="name">按项目名称字母顺序</option>
+                      </select>
+                    </div>
                   </div>
-                )}
+
+                  <button
+                    onClick={() => {
+                      setFilterProjectQuery('');
+                      setSortProjectOrder('created_desc');
+                    }}
+                    className="h-8 px-4 border border-[#c6c6c6] bg-white hover:bg-[#e8e8e8] text-[12px] text-[#161616] cursor-pointer rounded-none font-medium"
+                  >
+                    重置过滤
+                  </button>
+                </div>
+
+                {/* 项目列表格 */}
+                <div className="border border-[#e0e0e0] overflow-x-auto bg-white">
+                  <table className="w-full border-collapse text-[13px] text-left">
+                    <thead>
+                      <tr className="border-b border-[#c6c6c6] bg-[#f4f4f4] text-[#525252] font-semibold">
+                        <th className="py-3 px-4 font-medium">施工号 (全局唯一)</th>
+                        <th className="py-3 px-4 font-medium">项目名称</th>
+                        <th className="py-3 px-4 font-medium">备注</th>
+                        <th className="py-3 px-4 font-medium text-center">管线数</th>
+                        <th className="py-3 px-4 font-medium text-center">焊口数</th>
+                        <th className="py-3 px-4 font-medium text-center">完工情况</th>
+                        <th className="py-3 px-4 font-medium">质量记录进度</th>
+                        <th className="py-3 px-4 font-medium">创建时间</th>
+                        <th className="py-3 px-4 font-medium text-right">操作</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#e0e0e0] text-[#161616]">
+                      {sortedProjects.length === 0 ? (
+                        <tr>
+                          <td colSpan="9" className="py-10 text-center text-[#8d8d8d] font-mono">
+                            暂无匹配的项目。请点击右上角“新建项目”开始。
+                          </td>
+                        </tr>
+                      ) : (
+                        sortedProjects.map((p) => (
+                          <tr key={p.uuid} className="hover:bg-[#f4f4f4] cursor-pointer transition-colors duration-100" onClick={() => handleSelectProject(p)}>
+                            <td className="py-3.5 px-4 font-mono font-semibold text-[#0f62fe] hover:underline">
+                              {p.construction_no}
+                            </td>
+                            <td className="py-3.5 px-4 font-medium text-[#161616]">
+                              {p.project_name}
+                            </td>
+                            <td className="py-3.5 px-4 text-[#525252] truncate max-w-[200px]" title={p.remark}>
+                              {p.remark || '-'}
+                            </td>
+                            <td className="py-3.5 px-4 font-mono text-center">{p.pipeline_count}</td>
+                            <td className="py-3.5 px-4 font-mono text-center">{p.weld_count}</td>
+                            <td className="py-3.5 px-4 text-center">
+                              <span
+                                className={`inline-block px-2 py-0.5 text-[11px] font-medium
+                                  ${
+                                    p.status === '已完工'
+                                      ? 'bg-[#24a148]/10 text-[#24a148]'
+                                      : 'bg-[#f1c21b]/10 text-[#7d5c00]'
+                                  }
+                                `}
+                              >
+                                {p.status}
+                              </span>
+                            </td>
+                            <td className="py-3.5 px-4">
+                              <div className="flex items-center gap-3">
+                                <span className="font-mono text-[12px] font-semibold w-8">{p.quality_progress}%</span>
+                                <div className="w-24 h-1.5 bg-[#e0e0e0] rounded-none overflow-hidden">
+                                  <div
+                                    className="bg-[#24a148] h-full"
+                                    style={{ width: `${p.quality_progress}%` }}
+                                  />
+                                </div>
+                              </div>
+                            </td>
+                            <td className="py-3.5 px-4 font-mono text-[#525252]">{p.created_at}</td>
+                            <td className="py-3.5 px-4 text-right" onClick={(e) => e.stopPropagation()}>
+                              <div className="flex justify-end gap-2">
+                                <button
+                                  onClick={(e) => handleOpenEditProject(p, e)}
+                                  className="px-3 py-1 bg-transparent hover:bg-[#0f62fe]/10 text-[#0f62fe] border border-[#0f62fe] text-[12px] cursor-pointer rounded-none font-medium"
+                                >
+                                  编辑
+                                </button>
+                                <button
+                                  onClick={(e) => handleDeleteProject(p.uuid, e)}
+                                  className="px-3 py-1 bg-transparent hover:bg-[#da1e28]/10 text-[#da1e28] border border-[#da1e28] text-[12px] cursor-pointer rounded-none font-medium"
+                                >
+                                  删除
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
+            ) : (
+              /* 项目选中状态：折叠项目列表，渲染管线焊口控制台 */
+              <div className="flex-1 flex flex-col min-h-0 bg-white">
+                
+                {/* 顶部面包屑导航 Breadcrumbs */}
+                <div className="px-6 py-3 border-b border-[#e0e0e0] bg-[#f4f4f4] select-none text-[13px] flex items-center gap-2">
+                  <button
+                    onClick={handleBackToProjectConsole}
+                    className="text-[#0f62fe] hover:underline cursor-pointer font-medium"
+                  >
+                    项目控制台
+                  </button>
+                  <span className="text-[#8d8d8d] font-mono">/</span>
+                  <span className="text-[#161616] font-semibold flex items-center gap-1.5">
+                    🏗️ 施工号: <span className="font-mono text-[#0f62fe] bg-[#edf5ff] px-2 py-0.5">{selectedProject.construction_no}</span>
+                    <span className="text-[#525252] font-normal">({selectedProject.project_name})</span>
+                  </span>
+                </div>
+
+                {/* 项目看板 StatsBar */}
+                <div className="px-6 pt-4">
+                  <StatsBar stats={stats} />
+                </div>
+
+                {/* 分栏工作区 */}
+                <div className="flex-1 flex border-t border-[#e0e0e0] bg-white min-h-0">
+                  
+                  {/* 左侧管线树导航 */}
+                  <PipelineTree
+                    projectUuid={selectedProjectUuid}
+                    projectInfo={selectedProject}
+                    pipelines={pipelines}
+                    selectedPipelineUuid={selectedPipelineUuid}
+                    onSelectPipelineUuid={(uuid, no) => {
+                      setSelectedPipelineUuid(uuid);
+                      setSelectedPipelineNo(no);
+                    }}
+                    onImportClick={() => {
+                      setImportResult(null);
+                      setImportStatus('');
+                      setShowImportModal(true);
+                    }}
+                    onShowQR={handleOpenQRModal}
+                    onRefresh={() => {
+                      fetchStats(selectedProjectUuid);
+                      fetchPipelines(selectedProjectUuid);
+                    }}
+                    currentUser={currentUser}
+                  />
+
+                  {/* 右侧核心工作区 (直接渲染矩阵，移除云端归档浏览器页签以扩大版面) */}
+                  <div className="flex-1 flex flex-col min-h-0 bg-white border-l border-[#e0e0e0]">
+                    
+                    {/* 焊口过滤检索区 */}
+                    {selectedPipelineUuid && (
+                      <div className="p-4 border-b border-[#e0e0e0] bg-[#f4f4f4] flex gap-4 items-center flex-wrap select-none">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[12px] text-[#525252]">焊口搜索:</span>
+                          <input
+                            type="text"
+                            value={filterWeld}
+                            onChange={(e) => setFilterWeld(e.target.value)}
+                            placeholder="关键字..."
+                            className="h-8 px-2 bg-white border border-[#c6c6c6] text-[13px] text-[#161616] outline-none focus:border-[#0f62fe] rounded-none placeholder-[#8d8d8d] w-32"
+                          />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[12px] text-[#525252]">工序状态:</span>
+                          <select
+                            value={filterStatus}
+                            onChange={(e) => setFilterStatus(e.target.value)}
+                            className="h-8 px-2 bg-white border border-[#c6c6c6] text-[13px] text-[#161616] outline-none focus:border-[#0f62fe] rounded-none cursor-pointer"
+                          >
+                            <option value="">全部</option>
+                            <option value="completed">已完成</option>
+                            <option value="pending">待录入</option>
+                          </select>
+                        </div>
+                        <button
+                          onClick={() => {
+                            setFilterWeld('');
+                            setFilterStatus('');
+                          }}
+                          className="h-8 px-4 border border-[#c6c6c6] bg-white hover:bg-[#e8e8e8] text-[12px] text-[#161616] cursor-pointer rounded-none font-medium"
+                        >
+                          重置筛选
+                        </button>
+                      </div>
+                    )}
+
+                    <WeldMatrix
+                      records={weldRecords}
+                      onRefresh={() => {
+                        fetchRecords(selectedPipelineUuid);
+                        fetchStats(selectedProjectUuid);
+                      }}
+                      currentUser={currentUser}
+                      pipelineUuid={selectedPipelineUuid}
+                      projectInfo={selectedProject}
+                    />
+                  </div>
+
+                </div>
+
+              </div>
+            )}
+
           </div>
         )}
 
-        {/* Panel: 用户成员管理 */}
+        {/* Panel: 成员管理 */}
         {activeTab === 'users' && (
-          <div className="p-6">
+          <div className="p-6 select-none">
             <div className="border border-[#e0e0e0] p-6 bg-white rounded-none">
-              <div className="flex justify-between items-center mb-6 select-none">
+              <div className="flex justify-between items-center mb-6">
                 <div>
                   <h2 className="text-[20px] font-light text-[#161616]">成员管理</h2>
                   <p className="text-[13px] text-[#525252] mt-1">
@@ -451,7 +809,7 @@ export default function AdminPage() {
                 </button>
               </div>
 
-              <div className="overflow-x-auto select-none">
+              <div className="overflow-x-auto">
                 <table className="w-full border-collapse text-[13px] text-left">
                   <thead>
                     <tr className="border-b border-[#c6c6c6] text-[#525252] font-semibold">
@@ -527,7 +885,7 @@ export default function AdminPage() {
                     {settings.config.exportMode} (云端对象存储桶直传)
                   </span>
                   <p className="text-[12px] text-[#8d8d8d] mt-2">
-                    大容量照片流直接通过客户端直接上传至 OSS 存储桶，完全跳过 Next.js 服务器中转，极速且节省宿主机负荷。
+                    照片数据由前端直接直传至 OSS 归档存储桶，完全跳过 Next.js 服务器中转，极速且免去服务器流量开销。
                   </p>
                 </div>
 
@@ -555,7 +913,7 @@ export default function AdminPage() {
                     ))}
                   </div>
                   <p className="text-[12px] text-[#8d8d8d] mt-2">
-                    请确保移动设备与宿主机连接到相同的 WiFi 局域网络环境，扫码功能方可正常交互。
+                    请确保移动设备与宿主机连接到相同的 WiFi 局域网络环境，扫码定位功能方可正常交互。
                   </p>
                 </div>
               </div>
@@ -564,7 +922,184 @@ export default function AdminPage() {
         )}
       </div>
 
-      {/* ─── MODAL 1: Excel 导入弹窗 ───────────────────────── */}
+      {/* ─── MODAL 1: 新建项目弹窗 ─────────────────────────── */}
+      {showAddProjectModal && (
+        <div className="fixed inset-0 bg-black/40 z-[99999] flex items-center justify-center p-4">
+          <div className="w-full max-w-[480px] bg-white border border-[#e0e0e0] p-6 rounded-none select-none">
+            <h3 className="text-[18px] font-light text-[#161616] mb-4">新建管道项目</h3>
+            
+            <form onSubmit={handleAddProject} className="space-y-4">
+              <div className="flex flex-col">
+                <label className="text-[12px] text-[#525252] mb-1">项目施工号 (唯一)</label>
+                <input
+                  type="text"
+                  required
+                  value={newConstructionNo}
+                  onChange={(e) => setNewConstructionNo(e.target.value)}
+                  placeholder="如: SG-2024-001"
+                  className="h-9 px-3 bg-[#f4f4f4] border-t-0 border-x-0 border-b-2 border-transparent focus:border-[#0f62fe] focus:bg-[#e8e8e8] text-[13px] outline-none rounded-none"
+                />
+              </div>
+
+              <div className="flex flex-col">
+                <label className="text-[12px] text-[#525252] mb-1">项目名称</label>
+                <input
+                  type="text"
+                  required
+                  value={newProjectName}
+                  onChange={(e) => setNewProjectName(e.target.value)}
+                  placeholder="项目中文全称"
+                  className="h-9 px-3 bg-[#f4f4f4] border-t-0 border-x-0 border-b-2 border-transparent focus:border-[#0f62fe] focus:bg-[#e8e8e8] text-[13px] outline-none rounded-none"
+                />
+              </div>
+
+              <div className="flex flex-col">
+                <label className="text-[12px] text-[#525252] mb-1">项目备注</label>
+                <input
+                  type="text"
+                  value={newRemark}
+                  onChange={(e) => setNewRemark(e.target.value)}
+                  placeholder="项目补充备注 (选填)"
+                  className="h-9 px-3 bg-[#f4f4f4] border-t-0 border-x-0 border-b-2 border-transparent focus:border-[#0f62fe] focus:bg-[#e8e8e8] text-[13px] outline-none rounded-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex flex-col">
+                  <label className="text-[12px] text-[#525252] mb-1">管线号生成前缀 (选填)</label>
+                  <input
+                    type="text"
+                    value={newPipelinePrefix}
+                    onChange={(e) => setNewPipelinePrefix(e.target.value)}
+                    placeholder="如: PL (生成 PL-001)"
+                    className="h-9 px-3 bg-[#f4f4f4] border-t-0 border-x-0 border-b-2 border-transparent focus:border-[#0f62fe] focus:bg-[#e8e8e8] text-[13px] outline-none rounded-none"
+                  />
+                </div>
+                <div className="flex flex-col">
+                  <label className="text-[12px] text-[#525252] mb-1">焊口号生成前缀 (选填)</label>
+                  <input
+                    type="text"
+                    value={newWeldPrefix}
+                    onChange={(e) => setNewWeldPrefix(e.target.value)}
+                    placeholder="如: W (生成 W-01)"
+                    className="h-9 px-3 bg-[#f4f4f4] border-t-0 border-x-0 border-b-2 border-transparent focus:border-[#0f62fe] focus:bg-[#e8e8e8] text-[13px] outline-none rounded-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-[#e0e0e0] mt-6">
+                <button
+                  type="button"
+                  onClick={() => setShowAddProjectModal(false)}
+                  className="h-9 px-4 border border-[#c6c6c6] bg-white hover:bg-[#e8e8e8] text-[12px] cursor-pointer rounded-none"
+                >
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  className="h-9 px-5 bg-[#0f62fe] hover:bg-[#0353e9] text-white text-[12px] cursor-pointer rounded-none border-none outline-none font-medium"
+                >
+                  保存创建
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─── MODAL 2: 编辑项目弹窗 ─────────────────────────── */}
+      {showEditProjectModal && (
+        <div className="fixed inset-0 bg-black/40 z-[99999] flex items-center justify-center p-4">
+          <div className="w-full max-w-[480px] bg-white border border-[#e0e0e0] p-6 rounded-none select-none">
+            <h3 className="text-[18px] font-light text-[#161616] mb-4">编辑项目设置</h3>
+            
+            <form onSubmit={handleEditProject} className="space-y-4">
+              <div className="flex flex-col">
+                <label className="text-[12px] text-[#525252] mb-1">项目施工号 (唯一)</label>
+                <input
+                  type="text"
+                  required
+                  value={editConstructionNo}
+                  onChange={(e) => setEditConstructionNo(e.target.value)}
+                  className="h-9 px-3 bg-[#f4f4f4] border-t-0 border-x-0 border-b-2 border-transparent focus:border-[#0f62fe] focus:bg-[#e8e8e8] text-[13px] outline-none rounded-none"
+                />
+              </div>
+
+              <div className="flex flex-col">
+                <label className="text-[12px] text-[#525252] mb-1">项目名称</label>
+                <input
+                  type="text"
+                  required
+                  value={editProjectName}
+                  onChange={(e) => setEditProjectName(e.target.value)}
+                  className="h-9 px-3 bg-[#f4f4f4] border-t-0 border-x-0 border-b-2 border-transparent focus:border-[#0f62fe] focus:bg-[#e8e8e8] text-[13px] outline-none rounded-none"
+                />
+              </div>
+
+              <div className="flex flex-col">
+                <label className="text-[12px] text-[#525252] mb-1">项目备注</label>
+                <input
+                  type="text"
+                  value={editRemark}
+                  onChange={(e) => setEditRemark(e.target.value)}
+                  className="h-9 px-3 bg-[#f4f4f4] border-t-0 border-x-0 border-b-2 border-transparent focus:border-[#0f62fe] focus:bg-[#e8e8e8] text-[13px] outline-none rounded-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex flex-col">
+                  <label className="text-[12px] text-[#525252] mb-1">管线号前缀</label>
+                  <input
+                    type="text"
+                    value={editPipelinePrefix}
+                    onChange={(e) => setEditPipelinePrefix(e.target.value)}
+                    className="h-9 px-3 bg-[#f4f4f4] border-t-0 border-x-0 border-b-2 border-transparent focus:border-[#0f62fe] focus:bg-[#e8e8e8] text-[13px] outline-none rounded-none"
+                  />
+                </div>
+                <div className="flex flex-col">
+                  <label className="text-[12px] text-[#525252] mb-1">焊口号前缀</label>
+                  <input
+                    type="text"
+                    value={editWeldPrefix}
+                    onChange={(e) => setEditWeldPrefix(e.target.value)}
+                    className="h-9 px-3 bg-[#f4f4f4] border-t-0 border-x-0 border-b-2 border-transparent focus:border-[#0f62fe] focus:bg-[#e8e8e8] text-[13px] outline-none rounded-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-col">
+                <label className="text-[12px] text-[#525252] mb-1">项目完工状态</label>
+                <select
+                  value={editProjectStatus}
+                  onChange={(e) => setEditProjectStatus(e.target.value)}
+                  className="h-9 px-3 bg-[#f4f4f4] border-t-0 border-x-0 border-b-2 border-transparent focus:border-[#0f62fe] text-[13px] outline-none rounded-none cursor-pointer"
+                >
+                  <option value="进行中">进行中</option>
+                  <option value="已完工">已完工</option>
+                </select>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-[#e0e0e0] mt-6">
+                <button
+                  type="button"
+                  onClick={() => setShowEditProjectModal(false)}
+                  className="h-9 px-4 border border-[#c6c6c6] bg-white hover:bg-[#e8e8e8] text-[12px] cursor-pointer rounded-none"
+                >
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  className="h-9 px-5 bg-[#0f62fe] hover:bg-[#0353e9] text-white text-[12px] cursor-pointer rounded-none border-none outline-none font-medium"
+                >
+                  保存修改
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─── MODAL 3: Excel 导入弹窗 ───────────────────────── */}
       {showImportModal && (
         <div className="fixed inset-0 bg-black/40 z-[99999] flex items-center justify-center p-4">
           <div className="w-full max-w-[600px] bg-white border border-[#e0e0e0] p-6 rounded-none select-none">
@@ -579,7 +1114,7 @@ export default function AdminPage() {
             </div>
 
             <p className="text-[13px] text-[#525252] mb-4">
-              上传 `.xlsx` 格式的焊口清单，系统会自动将管线焊口元数据入库。<br />
+              上传 `.xlsx` 格式的焊口清单，系统会自动将管线焊口数据批量插入当前项目下方。<br />
               数据表必须包含：<strong className="text-[#161616]">管线号、焊口号</strong>两列（表头列名支持包含关键字模糊匹配）。
             </p>
 
@@ -631,7 +1166,7 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* ─── MODAL 2: 单个管线二维码查看弹窗 ───────────────── */}
+      {/* ─── MODAL 4: 单个管线二维码查看弹窗 ───────────────── */}
       {showQRModal && (
         <div className="fixed inset-0 bg-black/40 z-[99999] flex items-center justify-center p-4">
           <div className="w-full max-w-[400px] bg-white border border-[#e0e0e0] p-6 rounded-none select-none text-center">
@@ -684,7 +1219,7 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* ─── MODAL 3: 添加成员弹窗 ───────────────────────── */}
+      {/* ─── MODAL 5: 添加成员弹窗 ───────────────────────── */}
       {showAddUserModal && (
         <div className="fixed inset-0 bg-black/40 z-[99999] flex items-center justify-center p-4">
           <div className="w-full max-w-[400px] bg-white border border-[#e0e0e0] p-6 rounded-none select-none">
@@ -758,7 +1293,7 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* ─── MODAL 4: 编辑成员弹窗 ───────────────────────── */}
+      {/* ─── MODAL 6: 编辑成员弹窗 ───────────────────────── */}
       {showEditUserModal && (
         <div className="fixed inset-0 bg-black/40 z-[99999] flex items-center justify-center p-4">
           <div className="w-full max-w-[400px] bg-white border border-[#e0e0e0] p-6 rounded-none select-none">

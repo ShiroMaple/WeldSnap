@@ -34,7 +34,12 @@ async function handler(request) {
     return Response.json({ success: false, error: '请选择要上传的 Excel 文件' }, { status: 400 });
   }
 
-  // 2. 将上传的 File 读入 Buffer 并通过 xlsx 解析
+  const projectUuid = formData.get('project_uuid');
+  if (!projectUuid) {
+    return Response.json({ success: false, error: '缺少必需的项目标识 project_uuid' }, { status: 400 });
+  }
+
+  // 2. 将上传 of File 读入 Buffer 并通过 xlsx 解析
   let workbook;
   try {
     const arrayBuffer = await file.arrayBuffer();
@@ -91,7 +96,7 @@ async function handler(request) {
   }
 
   // 6. 执行事务入库
-  const result = db.importWeldRecords(records);
+  const result = db.importWeldRecords(records, projectUuid);
 
   return Response.json({
     success: true,

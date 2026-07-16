@@ -9,7 +9,15 @@ const db = require('../../../../lib/db');
 
 async function handler(request) {
   requireAdmin(request);
-  const stats = db.getStats();
+
+  const { searchParams } = new URL(request.url);
+  const projectUuid = searchParams.get('project_uuid');
+
+  if (!projectUuid) {
+    return Response.json({ success: false, error: '缺少 project_uuid 参数' }, { status: 400 });
+  }
+
+  const stats = db.getStats(projectUuid);
   return Response.json({ success: true, stats });
 }
 

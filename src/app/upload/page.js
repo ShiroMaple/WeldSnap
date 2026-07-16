@@ -4,13 +4,13 @@
  * 移动端自适应照片上传页面 (Client Component)
  *
  * 特性：
- *   - 支持扫码进入自动带出管线号，或手动联想过滤搜索管线号
+ *   - 支持扫码进入自动定位（基于全局唯一 pipeline_uuid），或手动搜索定位
  *   - 下拉选择焊口号（已完工的焊口置灰显示）
- *   - 组对、打底、盖面三大工序大触控拍照卡片设计
- *   - Canvas 本地抢跑压缩（降维至 1920x1080，0.8 质量）
- *   - **云端直传 (Scheme B)**：利用 /api/upload/sign 获取签名，前端 PUT 直传云存储，
- *     完成后调用 /api/upload/confirm 轻量回写确认
- *   - 进度状态全程反馈 (正在压缩...正在直传...已上传)
+ *   - 支持任何人（包括施工员与匿名用户）直接在现场新增焊口：
+ *     - 若项目设定了前缀，则点击按钮自动按格式（如 W-01）递增编号
+ *     - 若未设定前缀，提供文本框输入自定义编号
+ *   - 组对、打底、盖面三大工序大触控拍照卡片设计，支持不合格驳回照片的直观对比预览
+ *   - 云端直传（去语义化平摊存储）：Object Key 统一命名为 projects/{project_uuid}/{weld_uuid}_{工序}.jpg
  */
 
 import { useState, useEffect, useRef, Suspense } from 'react';
@@ -34,9 +34,16 @@ function UploadContent() {
   const [searchResults, setSearchResults] = useState([]);
   const [showSearchResults, setShowSearchResults] = useState(false);
 
-  const [selectedPipeline, setSelectedPipeline] = useState('');
+  const [selectedPipelineUuid, setSelectedPipelineUuid] = useState('');
+  const [selectedPipeline, setSelectedPipeline] = useState(''); // 管线名称
+  const [projectInfo, setProjectInfo] = useState({ name: '', constructionNo: '', weldPrefix: '' });
+  
   const [selectedWeld, setSelectedWeld] = useState('');
   const [weldsList, setWeldsList] = useState([]);
+
+  // 现场新增焊口输入框状态 (未设定前缀时使用)
+  const [newWeldName, setNewWeldName] = useState('');
+  const [addingWeld, setAddingWeld] = useState(false);
 
   // 保存当前选中的焊口的3个工序上传状态 (相对路径值)
   const [uploadedPhotos, setUploadedPhotos] = useState({
@@ -45,7 +52,7 @@ function UploadContent() {
     gaimian: null,
   });
 
-  // 每个工序的上传状态描述 (未上传, 正在压缩..., 正在上传云端..., 已上传, 失败)
+  // 每个工序的上传状态描述
   const [statusMsg, setStatusMsg] = useState({
     zudui: '未上传',
     dadi: '未上传',
@@ -80,10 +87,10 @@ function UploadContent() {
         }
         setCurrentUser(data.user);
 
-        // 检查 URL parameters 中是否包含管线参数
-        const pipelineParam = searchParams.get('pipeline');
-        if (pipelineParam) {
-          handleSelectPipeline(decodeURIComponent(pipelineParam));
+        // 检查 URL parameters 中是否包含管线 UUID 参数
+        const pipelineUuidParam = searchParams.get('pipeline_uuid');
+        if (pipelineUuidParam) {
+          handleSelectPipelineUuid(pipelineUuidParam);
         }
         setLoading(false);
       } catch (err) {
@@ -125,8 +132,8 @@ function UploadContent() {
   };
 
   // 选中管线号，加载对应的所有焊口列表
-  const handleSelectPipeline = async (pipelineNo) => {
-    setSelectedPipeline(pipelineNo);
+  const handleSelectPipelineUuid = async (pipelineUuid) => {
+    setSelectedPipelineUuid(pipelineUuid);
     setShowSearchResults(false);
     setPipelineQuery('');
     setWeldsList([]);
@@ -135,17 +142,70 @@ function UploadContent() {
     setStatusMsg({ zudui: '未上传', dadi: '未上传', gaimian: '未上传' });
 
     try {
-      const resp = await fetch(`/api/welds/by-pipeline/${encodeURIComponent(pipelineNo)}`);
+      const resp = await fetch(`/api/welds/by-pipeline/${encodeURIComponent(pipelineUuid)}`);
       const data = await resp.json();
       if (resp.ok && data.success) {
+        setSelectedPipeline(data.pipeline_no);
         setWeldsList(data.welds || []);
+        setProjectInfo({
+          name: data.project_name,
+          constructionNo: data.construction_no,
+          weldPrefix: data.weld_prefix || '',
+        });
       } else {
-        alert(data.error || '该管线号无焊口记录');
-        setSelectedPipeline('');
+        alert(data.error || '定位管线失败');
+        setSelectedPipelineUuid('');
       }
     } catch {
       alert('网络连接错误，无法读取焊口');
-      setSelectedPipeline('');
+      setSelectedPipelineUuid('');
+    }
+  };
+
+  // ─── 现场快捷新增焊口 ────────────────────────────────────
+  const handleAddWeldOnsite = async () => {
+    if (!selectedPipelineUuid) return;
+    
+    // 如果没有前缀，则强制要求手动录入焊口号
+    if (!projectInfo.weldPrefix && !newWeldName.trim()) {
+      alert('请输入要新增的焊口号');
+      return;
+    }
+
+    setAddingWeld(true);
+    try {
+      const resp = await fetch('/api/welds', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pipeline_uuid: selectedPipelineUuid,
+          weld_no: projectInfo.weldPrefix ? '' : newWeldName.trim(),
+        }),
+      });
+      const data = await resp.json();
+      if (resp.ok && data.success) {
+        alert(`成功新增焊口: ${data.weld_no}`);
+        setNewWeldName('');
+        // 重新拉取焊口列表，并默认选中当前创建的这个
+        const listResp = await fetch(`/api/welds/by-pipeline/${encodeURIComponent(selectedPipelineUuid)}`);
+        const listData = await listResp.json();
+        if (listResp.ok && listData.success) {
+          setWeldsList(listData.welds || []);
+          // 选中当前新增的焊口
+          setTimeout(() => {
+            setSelectedWeld(data.weld_no);
+            // 触发联动更新状态为未上传
+            setUploadedPhotos({ zudui: null, dadi: null, gaimian: null });
+            setStatusMsg({ zudui: '未上传', dadi: '未上传', gaimian: '未上传' });
+          }, 100);
+        }
+      } else {
+        alert(data.error || '新增焊口失败');
+      }
+    } catch (err) {
+      alert('网络连接失败，请重试');
+    } finally {
+      setAddingWeld(false);
     }
   };
 
@@ -187,7 +247,7 @@ function UploadContent() {
     }
   };
 
-  // ─── 照片拍照与直传 OSS 逻辑 (Scheme B) ───────────────────
+  // ─── 照片拍照与直传 OSS 逻辑 ──────────────────────────────
   const triggerCapture = (type) => {
     fileInputRefs[type].current.click();
   };
@@ -195,6 +255,14 @@ function UploadContent() {
   const handleCaptureAndUpload = async (type, e) => {
     const file = e.target.files[0];
     if (!file) return;
+
+    const activeWeld = weldsList.find((w) => w.weld_no === selectedWeld);
+    if (!activeWeld) {
+      alert('选中的焊口数据有误');
+      return;
+    }
+
+    const weldUuid = activeWeld.uuid;
 
     // 1. 进入压缩状态
     setIsSubmitting((prev) => ({ ...prev, [type]: true }));
@@ -219,14 +287,13 @@ function UploadContent() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          pipeline_no: selectedPipeline,
-          weld_no: selectedWeld,
+          weld_uuid: weldUuid,
           photo_type: type,
         }),
       });
       const data = await resp.json();
       if (!resp.ok || !data.success) {
-        throw new Error(data.error || '获取上传门禁失败');
+        throw new Error(data.error || '获取上传凭证失败');
       }
       signedUrl = data.signedUrl;
       objectKey = data.objectKey;
@@ -236,7 +303,7 @@ function UploadContent() {
       return;
     }
 
-    // 3. 前端直传云端 OSS (PUT 请求，设置 Content-Type: image/jpeg)
+    // 3. 前端直传云端 OSS
     setStatusMsg((prev) => ({ ...prev, [type]: '正在上传云存储...' }));
     try {
       const ossResp = await fetch(signedUrl, {
@@ -263,8 +330,7 @@ function UploadContent() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          pipeline_no: selectedPipeline,
-          weld_no: selectedWeld,
+          weld_uuid: weldUuid,
           photo_type: type,
           objectKey: objectKey,
         }),
@@ -296,12 +362,9 @@ function UploadContent() {
     setUploadedPhotos({ zudui: null, dadi: null, gaimian: null });
     setStatusMsg({ zudui: '未上传', dadi: '未上传', gaimian: '未上传' });
     
-    // 如果 URL 中有固定管线参数，重新加载；若无，重置管线选择
-    const pipelineParam = searchParams.get('pipeline');
-    if (pipelineParam) {
-      handleSelectPipeline(decodeURIComponent(pipelineParam));
-    } else {
-      setSelectedPipeline('');
+    // 重新加载已定位管线的最新焊口列表
+    if (selectedPipelineUuid) {
+      handleSelectPipelineUuid(selectedPipelineUuid);
     }
   };
 
@@ -354,12 +417,16 @@ function UploadContent() {
             {selectedPipeline ? (
               <div className="bg-[#edf5ff] border border-[#0f62fe] p-4 rounded-none flex items-center justify-between mb-4">
                 <div>
-                  <span className="text-[11px] text-[#0f62fe] block">已定位管线号</span>
-                  <span className="text-[16px] font-mono font-semibold text-[#161616]">{selectedPipeline}</span>
+                  <span className="text-[11px] text-[#0f62fe] block">已定位项目与管线号</span>
+                  <span className="text-[14px] font-semibold text-[#161616] block truncate max-w-[400px]">
+                    {projectInfo.name} ({projectInfo.constructionNo})
+                  </span>
+                  <span className="text-[16px] font-mono font-bold text-[#161616] block mt-1">{selectedPipeline}</span>
                 </div>
-                {!searchParams.get('pipeline') && (
+                {!searchParams.get('pipeline_uuid') && (
                   <button
                     onClick={() => {
+                      setSelectedPipelineUuid('');
                       setSelectedPipeline('');
                       setSelectedWeld('');
                     }}
@@ -387,8 +454,8 @@ function UploadContent() {
                       ) : (
                         searchResults.map((item) => (
                           <div
-                            key={item.pipeline_no}
-                            onClick={() => handleSelectPipeline(item.pipeline_no)}
+                            key={item.pipeline_uuid}
+                            onClick={() => handleSelectPipelineUuid(item.pipeline_uuid)}
                             className="p-3 border-b border-[#f4f4f4] last:border-b-0 cursor-pointer hover:bg-[#f4f4f4] text-[13px]"
                           >
                             <span className="font-mono font-semibold text-[#161616] block">{item.pipeline_no}</span>
@@ -402,28 +469,67 @@ function UploadContent() {
               </div>
             )}
 
-            {/* 2. 焊口号下拉选择区 */}
+            {/* 2. 焊口号下拉选择区与快捷新增 */}
             {selectedPipeline && (
-              <div className="flex flex-col mb-4">
-                <span className="text-[12px] text-[#525252] mb-1.5">选择焊口号</span>
-                <select
-                  value={selectedWeld}
-                  onChange={handleWeldChange}
-                  className="w-full h-11 px-3 bg-white border border-[#c6c6c6] text-[#161616] text-[14px] outline-none focus:border-[#0f62fe] rounded-none cursor-pointer"
-                >
-                  <option value="">请选择焊口号</option>
-                  {weldsList.map((w) => {
-                    const isAllDone =
-                      w.photo_zudui && !w.photo_zudui.startsWith('REJECTED:') &&
-                      w.photo_dadi && !w.photo_dadi.startsWith('REJECTED:') &&
-                      w.photo_gaimian && !w.photo_gaimian.startsWith('REJECTED:');
-                    return (
-                      <option key={w.id} value={w.weld_no} disabled={isAllDone}>
-                        {w.weld_no} {isAllDone ? '(已完工)' : ''}
-                      </option>
-                    );
-                  })}
-                </select>
+              <div className="bg-white border border-[#e0e0e0] p-4 rounded-none mb-4 space-y-4">
+                <div className="flex flex-col">
+                  <span className="text-[12px] text-[#525252] mb-1.5">选择焊口号</span>
+                  <select
+                    value={selectedWeld}
+                    onChange={handleWeldChange}
+                    className="w-full h-11 px-3 bg-white border border-[#c6c6c6] text-[#161616] text-[14px] outline-none focus:border-[#0f62fe] rounded-none cursor-pointer"
+                  >
+                    <option value="">请选择焊口号</option>
+                    {weldsList.map((w) => {
+                      const isAllDone =
+                        w.photo_zudui && !w.photo_zudui.startsWith('REJECTED:') &&
+                        w.photo_dadi && !w.photo_dadi.startsWith('REJECTED:') &&
+                        w.photo_gaimian && !w.photo_gaimian.startsWith('REJECTED:');
+                      return (
+                        <option key={w.id} value={w.weld_no} disabled={isAllDone}>
+                          {w.weld_no} {isAllDone ? '(已完工)' : ''}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+
+                {/* 现场新增焊口控件 */}
+                <div className="border-t border-[#f4f4f4] pt-4">
+                  <span className="text-[12px] text-[#525252] block mb-2">💡 未在图纸中？在现场快速新增焊口：</span>
+                  
+                  {projectInfo.weldPrefix ? (
+                    // 有焊口前缀：提供一键自增创建
+                    <button
+                      type="button"
+                      disabled={addingWeld}
+                      onClick={handleAddWeldOnsite}
+                      className="w-full h-10 border border-[#0f62fe] bg-white hover:bg-[#edf5ff] text-[#0f62fe] text-[13px] font-medium cursor-pointer rounded-none outline-none disabled:bg-[#f4f4f4] disabled:text-[#8d8d8d] disabled:border-[#e0e0e0]"
+                    >
+                      {addingWeld ? '正在自动编号...' : `+ 自动生成新增焊口 (格式: ${projectInfo.weldPrefix}-XX)`}
+                    </button>
+                  ) : (
+                    // 没有焊口前缀：提供完全自定义输入框
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={newWeldName}
+                        onChange={(e) => setNewWeldName(e.target.value)}
+                        placeholder="输入新焊口号..."
+                        disabled={addingWeld}
+                        className="flex-1 h-10 px-3 bg-white border border-[#c6c6c6] text-[#161616] text-[13px] outline-none focus:border-[#0f62fe] rounded-none disabled:bg-[#f4f4f4]"
+                      />
+                      <button
+                        type="button"
+                        disabled={addingWeld}
+                        onClick={handleAddWeldOnsite}
+                        className="h-10 px-4 bg-[#393939] hover:bg-[#4c4c4c] text-white text-[13px] font-medium cursor-pointer rounded-none border-none outline-none disabled:bg-[#8d8d8d]"
+                      >
+                        {addingWeld ? '新增中...' : '确认新增'}
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 

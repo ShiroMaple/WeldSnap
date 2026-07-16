@@ -1,8 +1,8 @@
 /**
- * SQLite DatabaseSync 封装
+ * SQLite DatabaseSync 封装 (全新项目级拓扑模型重构版)
  *
- * 沿用内置 node:sqlite 的 DatabaseSync 模块，保持与 V1.0 一致的表结构 Schema。
- * 新增 Pino 日志集成，关键数据库操作均附带结构化日志。
+ * 物理表层级：projects ➔ pipelines ➔ weld_records
+ * 使用 Node.js 内置 crypto.randomUUID() 自动生成全局唯一 uuid。
  *
  * 注意：node:sqlite 需 Node.js v22+ 并通过 --experimental-sqlite 启动参数启用。
  */
@@ -11,6 +11,7 @@ const { DatabaseSync } = require('node:sqlite');
 const bcrypt = require('bcryptjs');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('node:crypto');
 const { logger } = require('./logger');
 
 // ─── 数据库初始化 ─────────────────────────────────────────
@@ -24,57 +25,92 @@ if (!fs.existsSync(dataDir)) {
 
 const db = new DatabaseSync(DB_PATH);
 db.exec('PRAGMA journal_mode = WAL');
+db.exec('PRAGMA foreign_keys = ON'); // 开启外键约束，以支持级联删除
 
 logger.info({ msg: 'db.initialized', path: DB_PATH });
 
 // ─── 表结构初始化 ─────────────────────────────────────────
-db.exec(`
-  CREATE TABLE IF NOT EXISTS weld_records (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    seq_no          TEXT,
-    project_name    TEXT,
-    construction_no TEXT,
-    project_no      TEXT,
-    pipeline_no     TEXT,
-    weld_no         TEXT,
-    photo_zudui     TEXT,
-    photo_dadi      TEXT,
-    photo_gaimian   TEXT,
-    uploaded_by     TEXT,
-    uploaded_at     TEXT,
-    UNIQUE(pipeline_no, weld_no)
-  );
+let retries = 5;
+while (retries > 0) {
+  try {
+    // 检查 users 表是否存在以确认全部初始化已落盘
+    const tableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='users'").get();
+    if (!tableExists) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS projects (
+          id              INTEGER PRIMARY KEY AUTOINCREMENT,
+          uuid            TEXT UNIQUE NOT NULL,
+          construction_no TEXT UNIQUE NOT NULL,
+          project_name    TEXT NOT NULL,
+          remark          TEXT,
+          status          TEXT NOT NULL DEFAULT '进行中',
+          pipeline_prefix TEXT,
+          weld_prefix     TEXT,
+          created_at      TEXT DEFAULT (datetime('now','localtime'))
+        );
 
-  CREATE TABLE IF NOT EXISTS users (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    username        TEXT UNIQUE NOT NULL,
-    password_hash   TEXT NOT NULL,
-    role            TEXT NOT NULL DEFAULT 'worker',
-    display_name    TEXT,
-    created_at      TEXT DEFAULT (datetime('now','localtime')),
-    last_login_at   TEXT
-  );
-`);
+        CREATE TABLE IF NOT EXISTS pipelines (
+          id              INTEGER PRIMARY KEY AUTOINCREMENT,
+          uuid            TEXT UNIQUE NOT NULL,
+          project_id      INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+          pipeline_no     TEXT NOT NULL,
+          created_at      TEXT DEFAULT (datetime('now','localtime')),
+          UNIQUE(project_id, pipeline_no)
+        );
 
-try {
-  db.exec('ALTER TABLE users ADD COLUMN last_login_at TEXT');
-} catch (e) {
-  // Ignore if column already exists
+        CREATE TABLE IF NOT EXISTS weld_records (
+          id              INTEGER PRIMARY KEY AUTOINCREMENT,
+          uuid            TEXT UNIQUE NOT NULL,
+          pipeline_id      INTEGER NOT NULL REFERENCES pipelines(id) ON DELETE CASCADE,
+          weld_no         TEXT NOT NULL,
+          photo_zudui     TEXT,
+          photo_dadi      TEXT,
+          photo_gaimian   TEXT,
+          uploaded_by     TEXT,
+          uploaded_at     TEXT,
+          create_source   TEXT NOT NULL DEFAULT '管理控制台创建',
+          created_at      TEXT DEFAULT (datetime('now','localtime')),
+          UNIQUE(pipeline_id, weld_no)
+        );
+
+        CREATE TABLE IF NOT EXISTS users (
+          id              INTEGER PRIMARY KEY AUTOINCREMENT,
+          username        TEXT UNIQUE NOT NULL,
+          password_hash   TEXT NOT NULL,
+          role            TEXT NOT NULL DEFAULT 'worker',
+          display_name    TEXT,
+          created_at      TEXT DEFAULT (datetime('now','localtime')),
+          last_login_at   TEXT
+        );
+      `);
+
+      // ─── 创建默认管理员 ──────────────────────────────────────
+      const adminExists = db
+        .prepare('SELECT id FROM users WHERE username = ?')
+        .get('admin');
+      if (!adminExists) {
+        const hash = bcrypt.hashSync('admin123', 10);
+        db.prepare(
+          'INSERT INTO users (username, password_hash, role, display_name) VALUES (?, ?, ?, ?)'
+        ).run('admin', hash, 'admin', '系统管理员');
+        logger.info({ msg: 'db.admin_created', username: 'admin' });
+      }
+    }
+    break; // 成功执行，跳出循环
+  } catch (err) {
+    if (err.message.includes('locked')) {
+      retries--;
+      logger.warn({ msg: 'db.init_locked', retries_remaining: retries });
+      // 同步等待 100 毫秒后重试
+      const start = Date.now();
+      while (Date.now() - start < 100) {}
+    } else {
+      throw err;
+    }
+  }
 }
 
-// ─── 创建默认管理员 ──────────────────────────────────────
-const adminExists = db
-  .prepare('SELECT id FROM users WHERE username = ?')
-  .get('admin');
-if (!adminExists) {
-  const hash = bcrypt.hashSync('admin123', 10);
-  db.prepare(
-    'INSERT INTO users (username, password_hash, role, display_name) VALUES (?, ?, ?, ?)'
-  ).run('admin', hash, 'admin', '系统管理员');
-  logger.info({ msg: 'db.admin_created', username: 'admin' });
-}
-
-// ─── 认证 ────────────────────────────────────────────────
+// ─── 用户认证相关 ─────────────────────────────────────────
 function verifyUser(username, password) {
   const row = db
     .prepare('SELECT * FROM users WHERE username = ?')
@@ -105,16 +141,16 @@ function listUsers() {
 }
 
 function createUser(username, password, role, displayName) {
-  const hash = bcrypt.hashSync(password, 10);
   try {
+    const hash = bcrypt.hashSync(password, 10);
     db.prepare(
       'INSERT INTO users (username, password_hash, role, display_name) VALUES (?, ?, ?, ?)'
-    ).run(username, hash, role, displayName);
-    logger.info({ msg: 'db.user_created', username, role });
+    ).run(username, hash, role, displayName || username);
+    logger.info({ msg: 'db.user_created', username });
     return { success: true };
   } catch (e) {
     logger.error({ msg: 'db.user_create_failed', username, error: e.message });
-    return { success: false, error: e.message };
+    return { success: false, error: '用户名已存在' };
   }
 }
 
@@ -133,141 +169,6 @@ function deleteUser(id) {
   db.prepare('DELETE FROM users WHERE id = ?').run(id);
   logger.info({ msg: 'db.user_deleted', userId: id });
   return { success: true };
-}
-
-// ─── 焊口记录 ────────────────────────────────────────────
-function importWeldRecords(rows) {
-  const stmt = db.prepare(`
-    INSERT OR IGNORE INTO weld_records
-      (seq_no, project_name, construction_no, project_no, pipeline_no, weld_no)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `);
-
-  let inserted = 0;
-  let skipped = 0;
-
-  db.exec('BEGIN');
-  try {
-    for (const r of rows) {
-      const result = stmt.run(
-        r.seq_no || '',
-        r.project_name || '',
-        r.construction_no || '',
-        r.project_no || '',
-        r.pipeline_no || '',
-        r.weld_no || ''
-      );
-      if (result.changes > 0) inserted++;
-      else skipped++;
-    }
-    db.exec('COMMIT');
-    logger.info({
-      msg: 'db.import_completed',
-      total: rows.length,
-      inserted,
-      skipped,
-    });
-  } catch (e) {
-    db.exec('ROLLBACK');
-    logger.error({ msg: 'db.import_failed', error: e.message });
-    throw e;
-  }
-
-  return { total: rows.length, inserted, skipped };
-}
-
-function getWeldByPipelineAndWeldNo(pipelineNo, weldNo) {
-  return db
-    .prepare(
-      'SELECT * FROM weld_records WHERE pipeline_no = ? AND weld_no = ?'
-    )
-    .get(pipelineNo, weldNo);
-}
-
-function getWeldsByPipelineNo(pipelineNo) {
-  return db
-    .prepare(
-      'SELECT * FROM weld_records WHERE pipeline_no = ? ORDER BY weld_no'
-    )
-    .all(pipelineNo);
-}
-
-function searchPipelines(keyword) {
-  return db
-    .prepare(
-      `SELECT DISTINCT pipeline_no, project_name, construction_no, project_no
-       FROM weld_records
-       WHERE pipeline_no LIKE ?
-       ORDER BY pipeline_no
-       LIMIT 50`
-    )
-    .all('%' + keyword + '%');
-}
-
-function getAllPipelines() {
-  return db
-    .prepare(
-      `SELECT pipeline_no, project_name, construction_no, project_no,
-              COUNT(*) as weld_count,
-              SUM(CASE WHEN photo_zudui IS NOT NULL
-                        AND photo_dadi IS NOT NULL
-                        AND photo_gaimian IS NOT NULL
-                   THEN 1 ELSE 0 END) as completed
-       FROM weld_records
-       GROUP BY pipeline_no
-       ORDER BY pipeline_no`
-    )
-    .all();
-}
-
-function getAllRecords(filters) {
-  let sql = 'SELECT * FROM weld_records WHERE 1=1';
-  const params = [];
-
-  if (filters.pipeline_no) {
-    sql += ' AND pipeline_no LIKE ?';
-    params.push('%' + filters.pipeline_no + '%');
-  }
-  if (filters.weld_no) {
-    sql += ' AND weld_no LIKE ?';
-    params.push('%' + filters.weld_no + '%');
-  }
-  if (filters.status === 'completed') {
-    sql +=
-      ' AND photo_zudui IS NOT NULL AND photo_dadi IS NOT NULL AND photo_gaimian IS NOT NULL';
-  }
-  if (filters.status === 'pending') {
-    sql +=
-      ' AND (photo_zudui IS NULL OR photo_dadi IS NULL OR photo_gaimian IS NULL)';
-  }
-
-  sql += ' ORDER BY pipeline_no, weld_no';
-  return db.prepare(sql).all(...params);
-}
-
-function updatePhotoPath(id, field, fileName, uploadedBy) {
-  const allowedFields = ['photo_zudui', 'photo_dadi', 'photo_gaimian'];
-  if (!allowedFields.includes(field)) {
-    throw new Error('Invalid field: ' + field);
-  }
-  db.prepare(
-    `UPDATE weld_records
-     SET ${field} = ?, uploaded_by = ?, uploaded_at = datetime('now','localtime')
-     WHERE id = ?`
-  ).run(fileName, uploadedBy, id);
-}
-
-function getStats() {
-  const total = db
-    .prepare('SELECT COUNT(*) as v FROM weld_records')
-    .get().v;
-  const completed = db
-    .prepare(
-      "SELECT COUNT(*) as v FROM weld_records WHERE photo_zudui IS NOT NULL AND photo_dadi IS NOT NULL AND photo_gaimian IS NOT NULL"
-    )
-    .get().v;
-  const pending = total - completed;
-  return { total, completed, pending };
 }
 
 function updateLastLogin(id) {
@@ -311,6 +212,432 @@ function updateUser(id, username, password, role, displayName) {
   }
 }
 
+// ─── 项目 (Projects) 业务操作 ─────────────────────────────
+function listProjects() {
+  return db.prepare(`
+    SELECT 
+      p.*,
+      (SELECT COUNT(*) FROM pipelines WHERE project_id = p.id) as pipeline_count,
+      (
+        SELECT COUNT(*) 
+        FROM weld_records w 
+        JOIN pipelines pl ON w.pipeline_id = pl.id 
+        WHERE pl.project_id = p.id
+      ) as weld_count,
+      (
+        SELECT CASE 
+          WHEN COUNT(w.id) = 0 THEN 0
+          ELSE ROUND(
+            (
+              SUM(CASE WHEN w.photo_zudui IS NOT NULL AND w.photo_zudui NOT LIKE 'REJECTED:%' THEN 1 ELSE 0 END) +
+              SUM(CASE WHEN w.photo_dadi IS NOT NULL AND w.photo_dadi NOT LIKE 'REJECTED:%' THEN 1 ELSE 0 END) +
+              SUM(CASE WHEN w.photo_gaimian IS NOT NULL AND w.photo_gaimian NOT LIKE 'REJECTED:%' THEN 1 ELSE 0 END)
+            ) * 100.0 / (COUNT(w.id) * 3.0), 
+            0
+          )
+        END
+        FROM weld_records w
+        JOIN pipelines pl ON w.pipeline_id = pl.id
+        WHERE pl.project_id = p.id
+      ) as quality_progress
+    FROM projects p
+    ORDER BY p.created_at DESC
+  `).all();
+}
+
+function getProjectByUuid(uuid) {
+  return db.prepare('SELECT * FROM projects WHERE uuid = ?').get(uuid) || null;
+}
+
+function createProject(constructionNo, projectName, remark, pipelinePrefix, weldPrefix) {
+  try {
+    const uuid = crypto.randomUUID();
+    db.prepare(`
+      INSERT INTO projects (uuid, construction_no, project_name, remark, pipeline_prefix, weld_prefix)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(uuid, constructionNo.trim(), projectName.trim(), remark || '', pipelinePrefix || null, weldPrefix || null);
+    
+    logger.info({ msg: 'db.project_created', uuid, constructionNo });
+    return { success: true, uuid };
+  } catch (e) {
+    logger.error({ msg: 'db.project_create_failed', constructionNo, error: e.message });
+    return { success: false, error: '施工号已存在，无法重复创建' };
+  }
+}
+
+function updateProject(uuid, constructionNo, projectName, remark, pipelinePrefix, weldPrefix, status) {
+  try {
+    db.prepare(`
+      UPDATE projects 
+      SET construction_no = ?, project_name = ?, remark = ?, pipeline_prefix = ?, weld_prefix = ?, status = ?
+      WHERE uuid = ?
+    `).run(constructionNo.trim(), projectName.trim(), remark || '', pipelinePrefix || null, weldPrefix || null, status, uuid);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: '更新失败: 施工号可能已被其他项目占用' };
+  }
+}
+
+function deleteProject(uuid) {
+  try {
+    db.prepare('DELETE FROM projects WHERE uuid = ?').run(uuid);
+    logger.info({ msg: 'db.project_deleted', uuid });
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
+
+// ─── 管线 (Pipelines) 业务操作 ────────────────────────────
+function listPipelines(projectUuid) {
+  return db.prepare(`
+    SELECT 
+      pl.*,
+      (SELECT COUNT(*) FROM weld_records WHERE pipeline_id = pl.id) as weld_count,
+      (
+        SELECT COUNT(*) 
+        FROM weld_records 
+        WHERE pipeline_id = pl.id 
+          AND photo_zudui IS NOT NULL AND photo_zudui NOT LIKE 'REJECTED:%'
+          AND photo_dadi IS NOT NULL AND photo_dadi NOT LIKE 'REJECTED:%'
+          AND photo_gaimian IS NOT NULL AND photo_gaimian NOT LIKE 'REJECTED:%'
+      ) as completed
+    FROM pipelines pl
+    JOIN projects pr ON pl.project_id = pr.id
+    WHERE pr.uuid = ?
+    ORDER BY pl.pipeline_no ASC
+  `).all(projectUuid);
+}
+
+function getPipelineByUuid(uuid) {
+  return db.prepare('SELECT * FROM pipelines WHERE uuid = ?').get(uuid) || null;
+}
+
+function createPipeline(projectUuid, pipelineNo) {
+  const project = getProjectByUuid(projectUuid);
+  if (!project) {
+    return { success: false, error: '关联项目不存在' };
+  }
+
+  let finalPipelineNo = pipelineNo ? pipelineNo.trim() : '';
+
+  // 如果设定了管线号前缀，自动编号（如 PL-001）
+  if (project.pipeline_prefix) {
+    const prefix = project.pipeline_prefix;
+    const rows = db.prepare('SELECT pipeline_no FROM pipelines WHERE project_id = ? AND pipeline_no LIKE ?').all(project.id, `${prefix}-%`);
+    let maxNum = 0;
+    const regex = new RegExp(`^${prefix}-(\\d+)$`);
+    for (const r of rows) {
+      const m = r.pipeline_no.match(regex);
+      if (m) {
+        const num = parseInt(m[1], 10);
+        if (num > maxNum) maxNum = num;
+      }
+    }
+    finalPipelineNo = `${prefix}-${String(maxNum + 1).padStart(3, '0')}`;
+  }
+
+  if (!finalPipelineNo) {
+    return { success: false, error: '管线号不能为空' };
+  }
+
+  try {
+    const uuid = crypto.randomUUID();
+    db.prepare('INSERT INTO pipelines (uuid, project_id, pipeline_no) VALUES (?, ?, ?)')
+      .run(uuid, project.id, finalPipelineNo);
+    logger.info({ msg: 'db.pipeline_created', uuid, pipelineNo: finalPipelineNo });
+    return { success: true, uuid, pipeline_no: finalPipelineNo };
+  } catch (e) {
+    return { success: false, error: `管线号 "${finalPipelineNo}" 在当前项目中已存在，请勿重复创建` };
+  }
+}
+
+function deletePipeline(uuid) {
+  try {
+    db.prepare('DELETE FROM pipelines WHERE uuid = ?').run(uuid);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
+
+// ─── 焊口 (Weld Records) 业务操作 ─────────────────────────
+function listWelds(pipelineUuid) {
+  return db.prepare(`
+    SELECT w.*, p.pipeline_no, pr.uuid as project_uuid
+    FROM weld_records w
+    JOIN pipelines p ON w.pipeline_id = p.id
+    JOIN projects pr ON p.project_id = pr.id
+    WHERE p.uuid = ?
+    ORDER BY w.weld_no ASC
+  `).all(pipelineUuid);
+}
+
+function getWeldByUuid(uuid) {
+  return db.prepare(`
+    SELECT w.*, p.pipeline_no, pr.uuid as project_uuid, pr.project_name, pr.construction_no
+    FROM weld_records w
+    JOIN pipelines p ON w.pipeline_id = p.id
+    JOIN projects pr ON p.project_id = pr.id
+    WHERE w.uuid = ?
+  `).get(uuid) || null;
+}
+
+function getWeldByPipelineAndWeldNo(pipelineNo, weldNo) {
+  // 注意：因为管线号与焊口号在不同项目内可重名，在去语义化直传时需提供此查询。
+  // 我们默认获取最近创建的那条，防止历史项目冲突。
+  return db.prepare(`
+    SELECT w.*, p.pipeline_no, pr.uuid as project_uuid, pr.project_name, pr.construction_no
+    FROM weld_records w
+    JOIN pipelines p ON w.pipeline_id = p.id
+    JOIN projects pr ON p.project_id = pr.id
+    WHERE p.pipeline_no = ? AND w.weld_no = ?
+    ORDER BY w.id DESC
+  `).get(pipelineNo, weldNo) || null;
+}
+
+function createWeld(pipelineUuid, weldNo, createSource = '管理控制台创建') {
+  const pipeline = getPipelineByUuid(pipelineUuid);
+  if (!pipeline) {
+    return { success: false, error: '关联管线不存在' };
+  }
+
+  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(pipeline.project_id);
+  let finalWeldNo = weldNo ? weldNo.trim() : '';
+
+  // 如果设定了焊口号前缀，自动编号（如 W-01）
+  if (project.weld_prefix) {
+    const prefix = project.weld_prefix;
+    const rows = db.prepare('SELECT weld_no FROM weld_records WHERE pipeline_id = ? AND weld_no LIKE ?').all(pipeline.id, `${prefix}-%`);
+    let maxNum = 0;
+    const regex = new RegExp(`^${prefix}-(\\d+)$`);
+    for (const r of rows) {
+      const m = r.weld_no.match(regex);
+      if (m) {
+        const num = parseInt(m[1], 10);
+        if (num > maxNum) maxNum = num;
+      }
+    }
+    finalWeldNo = `${prefix}-${String(maxNum + 1).padStart(2, '0')}`;
+  }
+
+  if (!finalWeldNo) {
+    return { success: false, error: '焊口号不能为空' };
+  }
+
+  try {
+    const uuid = crypto.randomUUID();
+    db.prepare('INSERT INTO weld_records (uuid, pipeline_id, weld_no, create_source) VALUES (?, ?, ?, ?)')
+      .run(uuid, pipeline.id, finalWeldNo, createSource);
+    logger.info({ msg: 'db.weld_created', uuid, weldNo: finalWeldNo });
+    return { success: true, uuid, weld_no: finalWeldNo };
+  } catch (e) {
+    return { success: false, error: `焊口号 "${finalWeldNo}" 在当前管线中已存在` };
+  }
+}
+
+function deleteWeld(uuid) {
+  try {
+    db.prepare('DELETE FROM weld_records WHERE uuid = ?').run(uuid);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
+
+function updatePhotoPath(id, field, fileName, uploadedBy) {
+  const allowedFields = ['photo_zudui', 'photo_dadi', 'photo_gaimian'];
+  if (!allowedFields.includes(field)) {
+    throw new Error('Invalid field: ' + field);
+  }
+  db.prepare(`
+    UPDATE weld_records
+    SET ${field} = ?, uploaded_by = ?, uploaded_at = datetime('now','localtime')
+    WHERE id = ?
+  `).run(fileName, uploadedBy, id);
+}
+
+function getStats(projectUuid) {
+  const project = getProjectByUuid(projectUuid);
+  if (!project) return { total: 0, completed: 0, pending: 0 };
+
+  const total = db.prepare(`
+    SELECT COUNT(*) as v 
+    FROM weld_records w
+    JOIN pipelines p ON w.pipeline_id = p.id
+    WHERE p.project_id = ?
+  `).get(project.id).v;
+
+  const completed = db.prepare(`
+    SELECT COUNT(*) as v 
+    FROM weld_records w
+    JOIN pipelines p ON w.pipeline_id = p.id
+    WHERE p.project_id = ?
+      AND photo_zudui IS NOT NULL AND photo_zudui NOT LIKE 'REJECTED:%'
+      AND photo_dadi IS NOT NULL AND photo_dadi NOT LIKE 'REJECTED:%'
+      AND photo_gaimian IS NOT NULL AND photo_gaimian NOT LIKE 'REJECTED:%'
+  `).get(project.id).v;
+
+  const pending = total - completed;
+  return { total, completed, pending };
+}
+
+// ─── 批量删除支持与“熔断检查” ──────────────────────────────
+function bulkDelete(uuids, type, isSystemAdmin) {
+  // uuids: array of string UUIDs
+  // type: 'pipeline' | 'weld'
+  
+  db.exec('BEGIN');
+  try {
+    let checkedCount = 0;
+    let hasPhotoCount = 0;
+
+    if (type === 'weld') {
+      const stmtCheck = db.prepare(`
+        SELECT photo_zudui, photo_dadi, photo_gaimian 
+        FROM weld_records WHERE uuid = ?
+      `);
+      for (const uuid of uuids) {
+        const r = stmtCheck.get(uuid);
+        if (r) {
+          checkedCount++;
+          if (r.photo_zudui || r.photo_dadi || r.photo_gaimian) {
+            hasPhotoCount++;
+          }
+        }
+      }
+
+      if (hasPhotoCount > 0 && !isSystemAdmin) {
+        db.exec('ROLLBACK');
+        return {
+          success: false,
+          error: `⚠️ 在您勾选的 ${checkedCount} 个条目中，有 ${hasPhotoCount} 个已包含照片记录。为防止误删，本次批量操作已拦截。请取消勾选有图焊口，或联系系统管理员进行强行删除。`
+        };
+      }
+
+      // 执行删除
+      const stmtDel = db.prepare('DELETE FROM weld_records WHERE uuid = ?');
+      for (const uuid of uuids) {
+        stmtDel.run(uuid);
+      }
+
+    } else if (type === 'pipeline') {
+      const stmtCheck = db.prepare(`
+        SELECT w.photo_zudui, w.photo_dadi, w.photo_gaimian
+        FROM weld_records w
+        JOIN pipelines p ON w.pipeline_id = p.id
+        WHERE p.uuid = ?
+      `);
+
+      for (const uuid of uuids) {
+        const rows = stmtCheck.all(uuid);
+        checkedCount++;
+        let pHasPhoto = false;
+        for (const r of rows) {
+          if (r.photo_zudui || r.photo_dadi || r.photo_gaimian) {
+            pHasPhoto = true;
+            break;
+          }
+        }
+        if (pHasPhoto) {
+          hasPhotoCount++;
+        }
+      }
+
+      if (hasPhotoCount > 0 && !isSystemAdmin) {
+        db.exec('ROLLBACK');
+        return {
+          success: false,
+          error: `⚠️ 在您勾选的 ${checkedCount} 个条目中，有 ${hasPhotoCount} 个管线已包含照片记录。为防止误删，本次批量操作已拦截。请取消勾选有图管线，或联系系统管理员进行强行删除。`
+        };
+      }
+
+      // 执行删除
+      const stmtDel = db.prepare('DELETE FROM pipelines WHERE uuid = ?');
+      for (const uuid of uuids) {
+        stmtDel.run(uuid);
+      }
+    }
+
+    db.exec('COMMIT');
+    return { success: true };
+  } catch (err) {
+    db.exec('ROLLBACK');
+    return { success: false, error: err.message };
+  }
+}
+
+// ─── Excel 数据导入 ───────────────────────────────────────
+function importWeldRecords(rows, projectUuid) {
+  const project = getProjectByUuid(projectUuid);
+  if (!project) {
+    throw new Error('导入失败，项目不存在');
+  }
+
+  let inserted = 0;
+  let skipped = 0;
+
+  db.exec('BEGIN');
+  try {
+    const findPipelineStmt = db.prepare('SELECT id FROM pipelines WHERE project_id = ? AND pipeline_no = ?');
+    const insertPipelineStmt = db.prepare('INSERT INTO pipelines (uuid, project_id, pipeline_no) VALUES (?, ?, ?)');
+    
+    const findWeldStmt = db.prepare('SELECT id FROM weld_records WHERE pipeline_id = ? AND weld_no = ?');
+    const insertWeldStmt = db.prepare('INSERT INTO weld_records (uuid, pipeline_id, weld_no) VALUES (?, ?, ?)');
+
+    for (const r of rows) {
+      const pipelineNo = String(r.pipeline_no).trim();
+      const weldNo = String(r.weld_no).trim();
+
+      if (!pipelineNo || !weldNo) {
+        skipped++;
+        continue;
+      }
+
+      // 1. 查找或插入管线
+      let pipelineRow = findPipelineStmt.get(project.id, pipelineNo);
+      let pipelineId;
+
+      if (pipelineRow) {
+        pipelineId = pipelineRow.id;
+      } else {
+        const pipelineUuid = crypto.randomUUID();
+        const res = insertPipelineStmt.run(pipelineUuid, project.id, pipelineNo);
+        pipelineId = res.lastInsertRowid;
+      }
+
+      // 2. 查找或插入焊口
+      let weldRow = findWeldStmt.get(pipelineId, weldNo);
+      if (weldRow) {
+        skipped++;
+      } else {
+        const weldUuid = crypto.randomUUID();
+        insertWeldStmt.run(weldUuid, pipelineId, weldNo);
+        inserted++;
+      }
+    }
+
+    db.exec('COMMIT');
+    logger.info({ msg: 'db.import_completed', projectUuid, total: rows.length, inserted, skipped });
+    return { total: rows.length, inserted, skipped };
+  } catch (e) {
+    db.exec('ROLLBACK');
+    logger.error({ msg: 'db.import_failed', error: e.message });
+    throw e;
+  }
+}
+
+function searchPipelines(keyword) {
+  return db.prepare(`
+    SELECT p.uuid as pipeline_uuid, p.pipeline_no, pr.project_name, pr.construction_no
+    FROM pipelines p
+    JOIN projects pr ON p.project_id = pr.id
+    WHERE p.pipeline_no LIKE ?
+    ORDER BY p.pipeline_no
+    LIMIT 50
+  `).all('%' + keyword + '%');
+}
+
 // ─── 导出 ────────────────────────────────────────────────
 module.exports = {
   db,
@@ -321,12 +648,29 @@ module.exports = {
   deleteUser,
   updateUser,
   updateLastLogin,
-  importWeldRecords,
-  getWeldByPipelineAndWeldNo,
-  getWeldsByPipelineNo,
+  
+  // Projects
+  listProjects,
+  getProjectByUuid,
+  createProject,
+  updateProject,
+  deleteProject,
+
+  // Pipelines
+  listPipelines,
+  getPipelineByUuid,
+  createPipeline,
+  deletePipeline,
   searchPipelines,
-  getAllPipelines,
-  getAllRecords,
+
+  // Welds
+  listWelds,
+  getWeldByUuid,
+  getWeldByPipelineAndWeldNo,
+  createWeld,
+  deleteWeld,
   updatePhotoPath,
   getStats,
+  bulkDelete,
+  importWeldRecords,
 };

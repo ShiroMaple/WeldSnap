@@ -1,23 +1,40 @@
 'use client';
 
 /**
- * 焊口工序进度矩阵矩阵表格 (Client Component)
+ * 焊口工序进度矩阵表格 (Client Component)
  *
  * 特性：
  *   - 纯扁平设计，无纵向网格线，行底线为细线 (#e0e0e0)
- *   - 工序进度胶囊化呈现：已完成 10% 绿底；待录入 10% 暖沙黄底
- *   - 悬浮预览气泡：鼠标 Hover 到已上传照片时，在鼠标旁显示浮动的照片缩略图预览
- *   - 点击“已上传”时打开 Modal 弹窗显示完整照片，可交互下载保存，管理员亦可在此将其标记为不合格（需重传）
- *   - 点击“未上传”时调起本地选择，自动压缩并上传云端 OSS，轻量回写同步数据
- *   - 点击“需重传”时，管理员可预览历史不合格照片并提供重新上传通道
+ *   - 前端支持多选，提供批量删除（含熔断检查）与批量下载功能
+ *   - 批量下载：请求 /api/project/export-manifest 清单，利用 jszip + file-saver 零服务器负载打包
+ *   - 现场创建焊口：使用 IBM Carbon 黄色微标 (Yellow Tag) 进行高亮标注
  */
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { compressImage } from '@/lib/compress';
+import JSZip from 'jszip';
+import { saveAs } from 'file-saver';
 
-export default function WeldMatrix({ records = [], onRefresh }) {
-  const [hoveredPhoto, setHoveredPhoto] = useState(null); // 存储当前 hover 的照片相对路径
+export default function WeldMatrix({
+  records = [],
+  onRefresh = () => {},
+  currentUser = {},
+  pipelineUuid = '',
+  projectInfo = { pipeline_prefix: '', weld_prefix: '', construction_no: '', project_name: '' },
+}) {
+  const [hoveredPhoto, setHoveredPhoto] = useState(null);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+
+  // ─── 多选状态 ──────────────────────────────────────────
+  const [selectedUuids, setSelectedUuids] = useState([]);
+
+  // ─── 批量下载与批量删除状态 ─────────────────────────────
+  const [downloadProgress, setDownloadProgress] = useState('');
+  const [deleting, setDeleting] = useState(false);
+
+  // ─── 新增焊口 (控制台创建) 状态 ───────────────────────────
+  const [newWeldName, setNewWeldName] = useState('');
+  const [addingWeld, setAddingWeld] = useState(false);
 
   // ─── 查看完整大图 Modal 状态 ────────────────────────────
   const [viewPhotoPath, setViewPhotoPath] = useState(null);
@@ -25,9 +42,14 @@ export default function WeldMatrix({ records = [], onRefresh }) {
 
   // ─── 网页端直接上传工序照片状态 ──────────────────────────
   const fileInputRef = useRef(null);
-  const [uploadTarget, setUploadTarget] = useState(null); // { pipelineNo, weldNo, type }
-  const [uploadStatus, setUploadStatus] = useState('idle'); // idle, compressing, signing, uploading, confirming, success, error
+  const [uploadTarget, setUploadTarget] = useState(null); // { pipelineNo, weldNo, type, uuid }
+  const [uploadStatus, setUploadStatus] = useState('idle');
   const [uploadError, setUploadError] = useState('');
+
+  // 自动重置选择
+  useEffect(() => {
+    setSelectedUuids([]);
+  }, [records]);
 
   const handleMouseEnter = (photoPath, event) => {
     if (!photoPath) return;
@@ -43,7 +65,6 @@ export default function WeldMatrix({ records = [], onRefresh }) {
     setHoveredPhoto(null);
   };
 
-  // 智能计算浮动框 Top 位置避免超出视口顶部
   const tooltipTop = mousePos.y - 200 < 10 ? mousePos.y + 15 : mousePos.y - 200;
   const tooltipLeft = mousePos.x + 15;
 
@@ -51,17 +72,22 @@ export default function WeldMatrix({ records = [], onRefresh }) {
   const handleOpenPhotoModal = (path, pipelineNo, weldNo, typeLabel, typeKey) => {
     setViewPhotoPath(path);
     setViewPhotoInfo({ pipelineNo, weldNo, typeLabel, typeKey });
-    setHoveredPhoto(null); // 隐藏悬浮框
+    setHoveredPhoto(null);
   };
 
   const handleClosePhotoModal = () => {
     setViewPhotoPath(null);
   };
 
-  // 标记为不合格（需重传）
+  // 标记为不合格
   const handleRejectPhoto = async () => {
     if (!viewPhotoInfo.typeKey) return;
-    if (!confirm(`确定将管线 ${viewPhotoInfo.pipelineNo} 焊口 ${viewPhotoInfo.weldNo} 的【${viewPhotoInfo.typeLabel}】标记为不合格？\n标记后状态将变更为“需重传”，且会通知施工人员。`)) return;
+    
+    // 找出该焊口在 records 中的真实 UUID
+    const targetWeld = records.find(r => r.weld_no === viewPhotoInfo.weldNo);
+    if (!targetWeld) return;
+
+    if (!confirm(`确定将该工序照片标记为不合格？\n标记后状态将变更为“需重传”，且会通知施工人员。`)) return;
 
     try {
       const resp = await fetch('/api/admin/photo/reject', {
@@ -75,13 +101,13 @@ export default function WeldMatrix({ records = [], onRefresh }) {
       });
       const data = await resp.json();
       if (resp.ok && data.success) {
-        setViewPhotoPath(null); // 关闭大图弹窗
-        if (onRefresh) onRefresh(); // 刷新表格数据
+        setViewPhotoPath(null);
+        if (onRefresh) onRefresh();
       } else {
         alert(data.error || '操作失败');
       }
-    } catch (err) {
-      alert('网络连接错误，请检查网络');
+    } catch {
+      alert('网络连接错误');
     }
   };
 
@@ -94,7 +120,6 @@ export default function WeldMatrix({ records = [], onRefresh }) {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      // 构造文件名：PL-001_W-01_组对工序.jpg
       const cleanLabel = viewPhotoInfo.typeLabel.replace(/\s+/g, '');
       a.download = `${viewPhotoInfo.pipelineNo}_${viewPhotoInfo.weldNo}_${cleanLabel}.jpg`;
       document.body.appendChild(a);
@@ -102,14 +127,173 @@ export default function WeldMatrix({ records = [], onRefresh }) {
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
     } catch (err) {
-      // 降级：直接在新窗口打开
       window.open(`/api/photo/preview?path=${encodeURIComponent(viewPhotoPath)}`, '_blank');
     }
   };
 
-  // ─── 上传照片交互 ─────────────────────────────────────
-  const handleUploadClick = (pipelineNo, weldNo, type) => {
-    setUploadTarget({ pipelineNo, weldNo, type });
+  // ─── 批量多选逻辑 ──────────────────────────────────────
+  const handleToggleSelectWeld = (uuid) => {
+    setSelectedUuids((prev) =>
+      prev.includes(uuid) ? prev.filter((id) => id !== uuid) : [...prev, uuid]
+    );
+  };
+
+  const handleSelectAll = () => {
+    setSelectedUuids(records.map((r) => r.uuid));
+  };
+
+  const handleDeselectAll = () => {
+    setSelectedUuids([]);
+  };
+
+  const handleInvertSelect = () => {
+    setSelectedUuids((prev) =>
+      records.map((r) => r.uuid).filter((uuid) => !prev.includes(uuid))
+    );
+  };
+
+  // ─── 控制台后台新增焊口 ──────────────────────────────────
+  const handleAddWeld = async () => {
+    if (!pipelineUuid) return;
+    if (!projectInfo.weld_prefix && !newWeldName.trim()) {
+      alert('请输入焊口号');
+      return;
+    }
+
+    setAddingWeld(true);
+    try {
+      const resp = await fetch('/api/welds', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pipeline_uuid: pipelineUuid,
+          weld_no: projectInfo.weld_prefix ? '' : newWeldName.trim(),
+        }),
+      });
+      const data = await resp.json();
+      if (resp.ok && data.success) {
+        setNewWeldName('');
+        if (onRefresh) onRefresh();
+      } else {
+        alert(data.error || '添加焊口失败');
+      }
+    } catch {
+      alert('网络连接错误');
+    } finally {
+      setAddingWeld(false);
+    }
+  };
+
+  // ─── 批量删除焊口 (含熔断逻辑) ────────────────────────────
+  const handleBulkDeleteWelds = async (force = false) => {
+    if (selectedUuids.length === 0) {
+      alert('请先勾选需要删除的焊口');
+      return;
+    }
+
+    const confirmMsg = force
+      ? '⚠️ 确定强行删除所有选中的焊口及其照片记录吗？此操作不可逆！'
+      : `确定批量删除选中的 ${selectedUuids.length} 条焊口记录吗？`;
+
+    if (!confirm(confirmMsg)) return;
+
+    setDeleting(true);
+    try {
+      const resp = await fetch('/api/admin/records/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uuids: selectedUuids,
+          type: 'weld',
+          force: force,
+        }),
+      });
+      const data = await resp.json();
+
+      if (resp.ok && data.success) {
+        setSelectedUuids([]);
+        if (onRefresh) onRefresh();
+        alert('删除成功');
+      } else {
+        // 触发熔断检查
+        if (data.error && data.error.includes('拦截')) {
+          if (currentUser.role === 'admin') {
+            if (confirm(`${data.error}\n\n检测到您是系统管理员，确认强行删除选中的有图焊口吗？`)) {
+              handleBulkDeleteWelds(true);
+              return;
+            }
+          } else {
+            alert(data.error);
+          }
+        } else {
+          alert(data.error || '删除失败');
+        }
+      }
+    } catch {
+      alert('网络连接错误');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  // ─── 零服务器负载前端批量打包下载 ──────────────────────────
+  const handleBulkDownloadZip = async () => {
+    if (selectedUuids.length === 0) {
+      alert('请先勾选需要下载的焊口');
+      return;
+    }
+
+    setDownloadProgress('正在请求云端清单...');
+    try {
+      const resp = await fetch('/api/project/export-manifest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ weld_uuids: selectedUuids }),
+      });
+      const data = await resp.json();
+      if (!resp.ok || !data.success) {
+        throw new Error(data.error || '获取下载清单失败');
+      }
+
+      const manifest = data.manifest || [];
+      if (manifest.length === 0) {
+        alert('选中的焊口下尚无有效照片记录');
+        setDownloadProgress('');
+        return;
+      }
+
+      setDownloadProgress(`正在下载打包 (0/${manifest.length})...`);
+      const zip = new JSZip();
+
+      let completedCount = 0;
+      await Promise.all(
+        manifest.map(async (item) => {
+          try {
+            const fileResp = await fetch(item.url);
+            if (!fileResp.ok) throw new Error('网络文件请求失败');
+            const blob = await fileResp.blob();
+            zip.file(item.filename, blob);
+            completedCount++;
+            setDownloadProgress(`正在下载打包 (${completedCount}/${manifest.length})...`);
+          } catch (err) {
+            console.error(`下载文件失败: ${item.filename}`, err);
+          }
+        })
+      );
+
+      setDownloadProgress('正在本地构建压缩包...');
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      saveAs(zipBlob, `${projectInfo.construction_no}_焊口照片归档_${new Date().toISOString().slice(0, 10)}.zip`);
+      setDownloadProgress('');
+    } catch (err) {
+      alert(`批量下载失败: ${err.message}`);
+      setDownloadProgress('');
+    }
+  };
+
+  // ─── 网页直接上传照片交互 ───────────────────────────────
+  const handleUploadClick = (pipelineNo, weldNo, type, uuid) => {
+    setUploadTarget({ pipelineNo, weldNo, type, uuid });
     if (fileInputRef.current) {
       fileInputRef.current.click();
     }
@@ -119,33 +303,29 @@ export default function WeldMatrix({ records = [], onRefresh }) {
     const file = e.target.files[0];
     if (!file || !uploadTarget) return;
 
-    const { pipelineNo, weldNo, type } = uploadTarget;
+    const { type, uuid } = uploadTarget;
     setUploadError('');
     setUploadStatus('compressing');
 
     try {
-      // 1. 本地 Canvas 压缩图片
       const compressedBlob = await compressImage(file, 1920, 1080, 0.8);
 
-      // 2. 获取预签名上传凭证
       setUploadStatus('signing');
       const signResp = await fetch('/api/upload/sign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          pipeline_no: pipelineNo,
-          weld_no: weldNo,
+          weld_uuid: uuid,
           photo_type: type,
         }),
       });
       const signData = await signResp.json();
       if (!signResp.ok || !signData.success) {
-        throw new Error(signData.error || '获取上传凭证失败');
+        throw new Error(signData.error || '获取上传签名失败');
       }
 
       const { signedUrl, objectKey } = signData;
 
-      // 3. 直接上传至云存储 OSS
       setUploadStatus('uploading');
       const ossResp = await fetch(signedUrl, {
         method: 'PUT',
@@ -155,24 +335,22 @@ export default function WeldMatrix({ records = [], onRefresh }) {
         },
       });
       if (ossResp.status !== 200) {
-        throw new Error('直传存储服务器被拒绝');
+        throw new Error('直传 OSS 服务器失败');
       }
 
-      // 4. 同步状态写入数据库
       setUploadStatus('confirming');
       const confirmResp = await fetch('/api/upload/confirm', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          pipeline_no: pipelineNo,
-          weld_no: weldNo,
+          weld_uuid: uuid,
           photo_type: type,
           objectKey: objectKey,
         }),
       });
       const confirmData = await confirmResp.json();
       if (!confirmResp.ok || !confirmData.success) {
-        throw new Error(confirmData.error || '数据库状态确认失败');
+        throw new Error(confirmData.error || '状态同步失败');
       }
 
       setUploadStatus('success');
@@ -184,103 +362,191 @@ export default function WeldMatrix({ records = [], onRefresh }) {
 
     } catch (err) {
       setUploadStatus('error');
-      setUploadError(err.message || '上传时发生未知错误');
+      setUploadError(err.message || '上传异常');
     } finally {
-      e.target.value = ''; // 重置 Input
+      e.target.value = '';
     }
   };
 
   return (
-    <div className="flex-1 overflow-auto p-6 relative">
-      {records.length === 0 ? (
-        <div className="h-full flex items-center justify-center text-[#8d8d8d] text-[14px] font-mono select-none">
-          请在左侧导航树选择要查看的管线号
+    <div className="flex-1 flex flex-col min-h-0 bg-white relative">
+      
+      {/* 快捷批量下载、批量删除与控制台新增焊口条 */}
+      <div className="p-4 border-b border-[#e0e0e0] bg-[#f4f4f4] flex flex-wrap justify-between items-center select-none gap-4">
+        
+        {/* 左侧批量动作 */}
+        <div className="flex items-center gap-3">
+          {records.length > 0 && (
+            <div className="flex items-center gap-2 text-[11px] text-[#525252]">
+              <button onClick={handleSelectAll} className="hover:underline cursor-pointer">全选</button>
+              <span>/</span>
+              <button onClick={handleDeselectAll} className="hover:underline cursor-pointer">清空</button>
+              <span>/</span>
+              <button onClick={handleInvertSelect} className="hover:underline cursor-pointer">反选</button>
+            </div>
+          )}
+          
+          {selectedUuids.length > 0 && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleBulkDownloadZip}
+                disabled={!!downloadProgress}
+                className="h-8 px-4 bg-[#0f62fe] hover:bg-[#0353e9] text-white text-[12px] cursor-pointer rounded-none border-none font-medium"
+              >
+                {downloadProgress || `📦 批量下载已选 (${selectedUuids.length})`}
+              </button>
+              <button
+                onClick={() => handleBulkDeleteWelds(false)}
+                disabled={deleting}
+                className="h-8 px-4 bg-[#da1e28] hover:bg-[#b21922] text-white text-[12px] cursor-pointer rounded-none border-none font-medium"
+              >
+                🗑️ 删除已选 ({selectedUuids.length})
+              </button>
+            </div>
+          )}
         </div>
-      ) : (
-        <div className="w-full">
-          <table className="w-full border-collapse text-[13px] text-left select-none">
-            <thead>
-              <tr className="border-b border-[#c6c6c6] text-[#525252] font-semibold">
-                <th className="pb-3 pr-4 font-medium">焊口号</th>
-                <th className="pb-3 px-4 font-medium">组对工序</th>
-                <th className="pb-3 px-4 font-medium">打底工序</th>
-                <th className="pb-3 px-4 font-medium">盖面工序</th>
-                <th className="pb-3 px-4 font-medium">最近上传人</th>
-                <th className="pb-3 pl-4 font-medium">最近上传时间</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#e0e0e0] text-[#161616]">
-              {records.map((r) => {
-                const cellRender = (field, typeKey, typeLabel) => {
-                  const path = r[field];
-                  if (!path) {
-                    return (
-                      <span
-                        onClick={() => handleUploadClick(r.pipeline_no, r.weld_no, typeKey)}
-                        className="inline-block px-3 py-1 bg-[#f1c21b]/10 text-[#525252] text-[11px] rounded-none cursor-pointer hover:bg-[#f1c21b]/20 hover:text-[#161616] transition-all font-medium"
-                      >
-                        未上传
-                      </span>
-                    );
-                  }
 
-                  if (path.startsWith('REJECTED:')) {
+        {/* 右侧控制台新增焊口控制 */}
+        <div className="flex items-center gap-2">
+          {projectInfo.weld_prefix ? (
+            <button
+              onClick={handleAddWeld}
+              disabled={addingWeld}
+              className="h-8 px-4 border border-[#0f62fe] bg-white hover:bg-[#edf5ff] text-[#0f62fe] text-[12px] font-medium cursor-pointer rounded-none"
+            >
+              {addingWeld ? '添加中...' : `+ 自动生成焊口 (${projectInfo.weld_prefix}-XX)`}
+            </button>
+          ) : (
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={newWeldName}
+                onChange={(e) => setNewWeldName(e.target.value)}
+                placeholder="新增焊口号..."
+                disabled={addingWeld}
+                className="h-8 px-3 bg-white border border-[#c6c6c6] text-[12px] outline-none focus:border-[#0f62fe] rounded-none w-36"
+              />
+              <button
+                onClick={handleAddWeld}
+                disabled={addingWeld}
+                className="h-8 px-3 bg-[#393939] hover:bg-[#4c4c4c] text-white text-[12px] font-medium cursor-pointer rounded-none border-none"
+              >
+                添加
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 焊口数据列表 */}
+      <div className="flex-1 overflow-auto p-6 relative">
+        {records.length === 0 ? (
+          <div className="h-full flex items-center justify-center text-[#8d8d8d] text-[14px] font-mono select-none">
+            该管线号下暂无焊口数据，请在右侧新增或通过左侧导入 Excel
+          </div>
+        ) : (
+          <div className="w-full">
+            <table className="w-full border-collapse text-[13px] text-left select-none">
+              <thead>
+                <tr className="border-b border-[#c6c6c6] text-[#525252] font-semibold">
+                  <th className="pb-3 pr-4 font-medium w-10">
+                    {/* 复选框占位 */}
+                  </th>
+                  <th className="pb-3 px-4 font-medium">焊口号</th>
+                  <th className="pb-3 px-4 font-medium">组对工序</th>
+                  <th className="pb-3 px-4 font-medium">打底工序</th>
+                  <th className="pb-3 px-4 font-medium">盖面工序</th>
+                  <th className="pb-3 px-4 font-medium">最近上传人</th>
+                  <th className="pb-3 pl-4 font-medium">最近上传时间</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#e0e0e0] text-[#161616]">
+                {records.map((r) => {
+                  const isChecked = selectedUuids.includes(r.uuid);
+                  const isOnsite = r.create_source === '现场创建';
+
+                  const cellRender = (field, typeKey, typeLabel) => {
+                    const path = r[field];
+                    if (!path) {
+                      return (
+                        <span
+                          onClick={() => handleUploadClick(r.pipeline_no, r.weld_no, typeKey, r.uuid)}
+                          className="inline-block px-3 py-1 bg-[#f1c21b]/10 text-[#525252] text-[11px] rounded-none cursor-pointer hover:bg-[#f1c21b]/20 hover:text-[#161616] transition-all font-medium"
+                        >
+                          未上传
+                        </span>
+                      );
+                    }
+
+                    if (path.startsWith('REJECTED:')) {
+                      return (
+                        <span
+                          onMouseEnter={(e) => handleMouseEnter(path, e)}
+                          onMouseMove={handleMouseMove}
+                          onMouseLeave={handleMouseLeave}
+                          onClick={() => handleOpenPhotoModal(path, r.pipeline_no, r.weld_no, typeLabel, typeKey)}
+                          className="inline-block px-3 py-1 bg-[#da1e28]/10 text-[#da1e28] font-semibold text-[11px] rounded-none cursor-pointer hover:bg-[#da1e28]/25 transition-all border border-[#da1e28]/20 animate-pulse"
+                        >
+                          需重传
+                        </span>
+                      );
+                    }
+
                     return (
                       <span
                         onMouseEnter={(e) => handleMouseEnter(path, e)}
                         onMouseMove={handleMouseMove}
                         onMouseLeave={handleMouseLeave}
                         onClick={() => handleOpenPhotoModal(path, r.pipeline_no, r.weld_no, typeLabel, typeKey)}
-                        className="inline-block px-3 py-1 bg-[#da1e28]/10 text-[#da1e28] font-semibold text-[11px] rounded-none cursor-pointer hover:bg-[#da1e28]/25 transition-all border border-[#da1e28]/20 animate-pulse"
+                        className="inline-block px-3 py-1 bg-[#24a148]/10 text-[#24a148] font-medium text-[11px] rounded-none cursor-pointer hover:bg-[#24a148]/20 transition-all"
                       >
-                        需重传
+                        已上传
                       </span>
                     );
-                  }
+                  };
 
                   return (
-                    <span
-                      onMouseEnter={(e) => handleMouseEnter(path, e)}
-                      onMouseMove={handleMouseMove}
-                      onMouseLeave={handleMouseLeave}
-                      onClick={() => handleOpenPhotoModal(path, r.pipeline_no, r.weld_no, typeLabel, typeKey)}
-                      className="inline-block px-3 py-1 bg-[#24a148]/10 text-[#24a148] font-medium text-[11px] rounded-none cursor-pointer hover:bg-[#24a148]/20 transition-all"
-                    >
-                      已上传
-                    </span>
+                    <tr key={r.id} className="hover:bg-[#f4f4f4] transition-colors duration-100">
+                      <td className="py-3.5 pr-4">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => handleToggleSelectWeld(r.uuid)}
+                          className="w-4 h-4 cursor-pointer rounded-none accent-[#0f62fe]"
+                        />
+                      </td>
+                      <td className="py-3.5 px-4 font-mono font-medium flex items-center gap-2">
+                        <span>{r.weld_no}</span>
+                        {isOnsite && (
+                          <span
+                            className="bg-[#f1c21b]/20 text-[#161616] text-[10px] px-1 py-0.2 font-medium border border-[#f1c21b]/30"
+                            title="现场新增账号创建的焊口记录，管理员需核对名称是否符合图纸规范"
+                          >
+                            现场创建
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-4">
+                        {cellRender('photo_zudui', 'zudui', '组对工序')}
+                      </td>
+                      <td className="py-3.5 px-4">
+                        {cellRender('photo_dadi', 'dadi', '打底工序')}
+                      </td>
+                      <td className="py-3.5 px-4">
+                        {cellRender('photo_gaimian', 'gaimian', '盖面工序')}
+                      </td>
+                      <td className="py-3.5 px-4 text-[#525252]">{r.uploaded_by || '-'}</td>
+                      <td className="py-3.5 pl-4 text-[#525252] font-mono">{r.uploaded_at || '-'}</td>
+                    </tr>
                   );
-                };
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
-                return (
-                  <tr key={r.id} className="hover:bg-[#f4f4f4] transition-colors duration-100">
-                    <td className="py-3.5 pr-4 font-mono font-medium">{r.weld_no}</td>
-                    
-                    {/* 组对 */}
-                    <td className="py-3.5 px-4">
-                      {cellRender('photo_zudui', 'zudui', '组对工序')}
-                    </td>
-
-                    {/* 打底 */}
-                    <td className="py-3.5 px-4">
-                      {cellRender('photo_dadi', 'dadi', '打底工序')}
-                    </td>
-
-                    {/* 盖面 */}
-                    <td className="py-3.5 px-4">
-                      {cellRender('photo_gaimian', 'gaimian', '盖面工序')}
-                    </td>
-
-                    <td className="py-3.5 px-4 text-[#525252]">{r.uploaded_by || '-'}</td>
-                    <td className="py-3.5 pl-4 text-[#525252] font-mono">{r.uploaded_at || '-'}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* 隐藏的文件上传输入框 */}
+      {/* 隐藏的直接上传文件 Input */}
       <input
         type="file"
         ref={fileInputRef}
@@ -289,7 +555,7 @@ export default function WeldMatrix({ records = [], onRefresh }) {
         className="hidden"
       />
 
-      {/* 悬浮缩略图预览气泡 (采用 fixed 并在鼠标旁跟随) */}
+      {/* Hover 跟随悬浮预览气泡 */}
       {hoveredPhoto && (
         <div
           className="fixed z-[99999] p-1 bg-[#e0e0e0] border border-[#c6c6c6] rounded-none w-64 h-48 pointer-events-none transition-opacity duration-150"
@@ -308,18 +574,19 @@ export default function WeldMatrix({ records = [], onRefresh }) {
         </div>
       )}
 
-      {/* ─── MODAL 1: 完整大图查看 ───────────────────────── */}
+      {/* 大图查看及驳回 Modal */}
       {viewPhotoPath && (
         <div className="fixed inset-0 bg-black/75 z-[99999] flex flex-col items-center justify-center p-4">
           <div className="w-full max-w-[800px] bg-white border border-[#e0e0e0] flex flex-col rounded-none shadow-none">
-            {/* Modal 头部 */}
+            
+            {/* Modal Header */}
             <div className="flex justify-between items-center px-6 py-4 border-b border-[#e0e0e0] select-none">
               <div>
                 <h3 className="text-[16px] font-semibold text-[#161616]">
                   {viewPhotoInfo.typeLabel} 照片详情
                 </h3>
                 <span className="text-[12px] text-[#525252] font-mono">
-                  管线号: {viewPhotoInfo.pipelineNo} | 焊口号: {viewPhotoInfo.weldNo}
+                  管线: {viewPhotoInfo.pipelineNo} | 焊口: {viewPhotoInfo.weldNo}
                   {viewPhotoPath.startsWith('REJECTED:') && (
                     <span className="text-[#da1e28] ml-2 font-semibold"> (❌ 需重传)</span>
                   )}
@@ -333,18 +600,17 @@ export default function WeldMatrix({ records = [], onRefresh }) {
               </button>
             </div>
 
-            {/* 图片展示区 */}
+            {/* Photo Preview Body */}
             <div className="p-4 bg-[#f4f4f4] flex items-center justify-center overflow-hidden min-h-[300px] max-h-[70vh]">
               <img
                 src={`/api/photo/preview?path=${encodeURIComponent(viewPhotoPath)}`}
-                alt="Weld Photo Full View"
+                alt="Weld Photo Full"
                 className="max-w-full max-h-[60vh] object-contain"
               />
             </div>
 
-            {/* Modal 底部控制区 */}
+            {/* Modal Footer Control */}
             <div className="flex justify-end gap-3 px-6 py-4 border-t border-[#e0e0e0] select-none">
-              {/* 如果照片尚未被标记为不合格，则向管理员展示此按钮 */}
               {!viewPhotoPath.startsWith('REJECTED:') && (
                 <button
                   onClick={handleRejectPhoto}
@@ -354,12 +620,14 @@ export default function WeldMatrix({ records = [], onRefresh }) {
                 </button>
               )}
               
-              {/* 如果照片已被标记为不合格，则展示一键重新上传通道 */}
               {viewPhotoPath.startsWith('REJECTED:') && (
                 <button
                   onClick={() => {
-                    setViewPhotoPath(null); // 关闭预览 Modal
-                    handleUploadClick(viewPhotoInfo.pipelineNo, viewPhotoInfo.weldNo, viewPhotoInfo.typeKey);
+                    setViewPhotoPath(null);
+                    const targetWeld = records.find(r => r.weld_no === viewPhotoInfo.weldNo);
+                    if (targetWeld) {
+                      handleUploadClick(viewPhotoInfo.pipelineNo, viewPhotoInfo.weldNo, viewPhotoInfo.typeKey, targetWeld.uuid);
+                    }
                   }}
                   className="h-10 px-5 bg-[#da1e28] hover:bg-[#b21922] text-white text-[13px] cursor-pointer rounded-none border-none outline-none font-medium mr-auto"
                 >
@@ -384,7 +652,7 @@ export default function WeldMatrix({ records = [], onRefresh }) {
         </div>
       )}
 
-      {/* ─── MODAL 2: 上传照片进度指示器 ──────────────────── */}
+      {/* Upload Progress Modals */}
       {uploadStatus !== 'idle' && (
         <div className="fixed inset-0 bg-black/40 z-[99999] flex items-center justify-center p-4">
           <div className="w-full max-w-[360px] bg-white border border-[#e0e0e0] p-6 rounded-none text-center select-none">

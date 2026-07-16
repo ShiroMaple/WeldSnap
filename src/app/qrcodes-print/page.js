@@ -4,21 +4,21 @@
  * 二维码批量打印排版页 (Client Component)
  *
  * 特性：
- *   - 首屏自动请求 /api/admin/qrcodes 加载全量管线二维码
+ *   - 根据 URL 参数中的 project_uuid 与可选的 uuids (勾选的管线) 动态加载二维码
  *   - 清晰、规整的纸张排版格栅
- *   - @media print 打印自适应设计：自动隐藏“打印”动作按钮，
- *     强制 page-break-inside: avoid 规避二维码跨页断开
+ *   - 强制使用 CSS 打印分页令牌，防止单个二维码被横向切成两半
  */
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useState, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 
-export default function QrCodesPrintPage() {
+function QrCodesPrintContent() {
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState([]);
   const [serverIP, setServerIP] = useState('');
   const [port, setPort] = useState(3000);
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   useEffect(() => {
     async function checkAuthAndLoad() {
@@ -31,8 +31,21 @@ export default function QrCodesPrintPage() {
           return;
         }
 
-        // 2. 加载全量二维码
-        const qrResp = await fetch('/api/admin/qrcodes');
+        // 2. 加载选中的管线或全量管线二维码
+        const projectUuid = searchParams.get('project_uuid');
+        const uuidsParam = searchParams.get('uuids');
+
+        if (!projectUuid && !uuidsParam) {
+          alert('缺少必需的打印参数');
+          setLoading(false);
+          return;
+        }
+
+        const queryParams = new URLSearchParams();
+        if (projectUuid) queryParams.set('project_uuid', projectUuid);
+        if (uuidsParam) queryParams.set('uuids', uuidsParam);
+
+        const qrResp = await fetch(`/api/admin/qrcodes?${queryParams.toString()}`);
         const qrData = await qrResp.json();
         if (qrResp.ok && qrData.success) {
           setItems(qrData.items || []);
@@ -49,7 +62,7 @@ export default function QrCodesPrintPage() {
     }
 
     checkAuthAndLoad();
-  }, [router]);
+  }, [router, searchParams]);
 
   if (loading) {
     return (
@@ -61,6 +74,16 @@ export default function QrCodesPrintPage() {
 
   return (
     <div className="min-h-screen bg-white p-8 font-sans">
+      <style dangerouslySetInnerHTML={{__html: `
+        @media print {
+          .print-avoid-break {
+            page-break-inside: avoid !important;
+            break-inside: avoid-page !important;
+            break-inside: avoid !important;
+          }
+        }
+      `}} />
+
       {/* 顶栏控制面板 (打印时隐藏) */}
       <div className="mb-8 p-4 bg-[#f4f4f4] border border-[#e0e0e0] flex items-center justify-between print:hidden select-none rounded-none">
         <div>
@@ -85,18 +108,18 @@ export default function QrCodesPrintPage() {
         </div>
       </div>
 
-      {/* 二维码打印格栅 (打印自适应) */}
+      {/* 二维码打印格栅 */}
       {items.length === 0 ? (
         <div className="text-center py-16 text-[#8d8d8d] text-[14px] font-mono">
-          暂无管线数据，请先前往管理后台导入 Excel 数据。
+          暂无管线数据，请确保已勾选或管线不为空。
         </div>
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8 print:grid-cols-2 print:gap-12">
           {items.map((item) => (
             <div
               key={item.pipeline_no}
-              className="border border-[#c6c6c6] p-6 flex flex-col items-center justify-center text-center bg-white rounded-none print:break-inside-avoid print:border-[#999] print:p-4"
-              style={{ pageBreakInside: 'avoid' }}
+              className="print-avoid-break border border-[#c6c6c6] p-6 flex flex-col items-center justify-center text-center bg-white rounded-none print:border-[#999] print:p-4"
+              style={{ pageBreakInside: 'avoid', breakInside: 'avoid' }}
             >
               <img
                 src={item.qr}
@@ -107,7 +130,7 @@ export default function QrCodesPrintPage() {
                 <span className="block font-mono text-[15px] font-bold text-[#161616] truncate">
                   管线号: {item.pipeline_no}
                 </span>
-                <span className="block font-mono text-[10px] text-[#8d8d8d] truncate mt-1.5 print:text-[8px]">
+                <span className="block font-mono text-[9px] text-[#8d8d8d] truncate mt-1.5 print:text-[8px]">
                   {item.url}
                 </span>
               </div>
@@ -116,10 +139,18 @@ export default function QrCodesPrintPage() {
         </div>
       )}
 
-      {/* 打印专用底栏 (仅在打印时呈现) */}
+      {/* 打印专用底栏 */}
       <footer className="hidden print:block text-center text-[10px] text-[#8d8d8d] mt-12 font-mono border-t border-dashed border-[#ccc] pt-4">
         WeldSnap V2.0 管道焊口照片拍照系统 — 二维码打印凭证
       </footer>
     </div>
+  );
+}
+
+export default function QrCodesPrintPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-white font-mono text-[#525252] text-[14px]">[WeldSnap] Loading printable layout...</div>}>
+      <QrCodesPrintContent />
+    </Suspense>
   );
 }
