@@ -544,16 +544,16 @@ export default function AdminPage() {
                 {/* 顶层面板标题 */}
                 <div className="flex justify-between items-center flex-wrap gap-4">
                   <div>
-                    <h2 className="text-[22px] font-light text-[#161616]">管道项目控制台</h2>
+                    <h2 className="text-[22px] font-light text-[#161616]">项目控制台</h2>
                     <p className="text-[13px] text-[#525252] mt-1">
-                      管理的起点是工程项目，您可以在此管理所有的施工号清单，并设定管线/焊口号的自增生成前缀。
+                      从项目开始管理，您可以在此管理所有的工程项目和施工号，并设定管线/焊口号的自增生成前缀。
                     </p>
                   </div>
                   <button
                     onClick={() => setShowAddProjectModal(true)}
                     className="h-10 px-6 bg-[#0f62fe] hover:bg-[#0353e9] text-white text-[13px] cursor-pointer rounded-none border-none outline-none font-medium flex items-center gap-1"
                   >
-                    <span>+</span> 新建项目
+                    <span>+</span> 添加项目
                   </button>
                 </div>
 
@@ -838,8 +838,8 @@ export default function AdminPage() {
                               ${u.role === 'admin'
                                 ? 'bg-[#edf5ff] text-[#0f62fe]'
                                 : u.role === 'project_admin'
-                                ? 'bg-[#f1c21b]/20 text-[#161616]'
-                                : 'bg-[#f4f4f4] text-[#525252]'
+                                  ? 'bg-[#f1c21b]/20 text-[#161616]'
+                                  : 'bg-[#f4f4f4] text-[#525252]'
                               }
                             `}
                           >
@@ -931,7 +931,7 @@ export default function AdminPage() {
       {showAddProjectModal && (
         <div className="fixed inset-0 bg-black/40 z-[99999] flex items-center justify-center p-4">
           <div className="w-full max-w-[480px] bg-white border border-[#e0e0e0] p-6 rounded-none select-none">
-            <h3 className="text-[18px] font-light text-[#161616] mb-4">新建管道项目</h3>
+            <h3 className="text-[18px] font-light text-[#161616] mb-4">添加项目</h3>
 
             <form onSubmit={handleAddProject} className="space-y-4">
               <div className="flex flex-col">
