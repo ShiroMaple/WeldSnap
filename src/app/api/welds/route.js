@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 /**
  * 现场与管理后台新增焊口通用接口 (需登录)
  * POST /api/welds

@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 /**
  * 前端直传 OSS 成功后的状态确认与回写 API (普通施工人员与管理员均可访问，需已登录)
  * POST /api/upload/confirm

@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 /**
  * OSS 预签名 URL 派发端点
  * POST /api/upload/sign

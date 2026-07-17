@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 /**
  * 模糊搜索管线号接口
  * GET /api/welds/search?q=xxx

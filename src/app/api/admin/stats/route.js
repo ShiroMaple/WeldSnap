@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 /**
  * 管理员获取焊口总体统计数据接口
  * GET /api/admin/stats

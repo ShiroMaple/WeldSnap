@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 /**
  * 获取云端归档目录树接口 (管理员权限)
  * GET /api/admin/export-folder

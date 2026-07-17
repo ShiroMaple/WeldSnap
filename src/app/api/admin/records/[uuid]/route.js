@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 /**
  * 焊口编辑/删除 API 接口 (管理员权限)
  * PUT    /api/admin/records/[uuid] - 编辑焊口号

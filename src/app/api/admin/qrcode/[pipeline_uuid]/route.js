@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 /**
  * 生成单个管线二维码接口 (基于全局唯一 UUID)
  * GET /api/admin/qrcode/[pipeline_uuid]

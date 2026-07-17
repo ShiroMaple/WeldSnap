@@ -25,6 +25,7 @@ if (!fs.existsSync(dataDir)) {
 
 const db = new DatabaseSync(DB_PATH);
 db.exec('PRAGMA journal_mode = WAL');
+db.exec('PRAGMA busy_timeout = 5000'); // 🚀 设置繁忙超时，防止高并发构建时死锁
 db.exec('PRAGMA foreign_keys = ON'); // 开启外键约束，以支持级联删除
 
 logger.info({ msg: 'db.initialized', path: DB_PATH });

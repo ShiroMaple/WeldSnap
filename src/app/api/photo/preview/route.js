@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 /**
  * 照片安全预览重定向接口 (普通工人与管理员均可访问，需已登录)
  * GET /api/photo/preview?path=relative_path

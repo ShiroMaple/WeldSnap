@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 /**
  * 匿名快捷（简易）登录接口
  * POST /api/auth/anonymous

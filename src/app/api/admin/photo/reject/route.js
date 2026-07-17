@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 /**
  * 标记照片为不合格接口 (仅限系统管理员)
  * POST /api/admin/photo/reject

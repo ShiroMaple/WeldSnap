@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 /**
  * 焊口记录查询与管理 API 接口 (管理员权限)
  * GET /api/admin/records?pipeline_uuid=... - 查询某管线下的焊口记录列表（支持过滤）

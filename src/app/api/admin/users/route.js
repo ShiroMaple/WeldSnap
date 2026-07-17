@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 /**
  * 用户管理接口 (列表与新增)
  *

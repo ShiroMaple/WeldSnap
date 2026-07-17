@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 /**
  * 校验用户登录状态接口
  * GET /api/auth/check

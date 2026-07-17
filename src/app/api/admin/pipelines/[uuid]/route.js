@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 /**
  * 管线编辑/删除 API 接口 (管理员权限)
  * PUT    /api/admin/pipelines/[uuid] - 编辑管线号

@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 /**
  * 导出项目数据接口 (管理员权限)
  * GET /api/admin/projects/[uuid]/export

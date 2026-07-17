@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 /**
  * 下载导入模板接口 (管理员权限)
  * GET /api/admin/export-template

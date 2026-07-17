@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 /**
  * 根据管线 UUID 获取管线基本信息及焊口列表接口
  * GET /api/welds/by-pipeline/[pipeline_uuid]

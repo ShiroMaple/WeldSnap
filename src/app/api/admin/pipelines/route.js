@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 /**
  * 管线管理 API 接口 (管理员权限)
  * GET  /api/admin/pipelines?project_uuid=... - 获取项目下的管线及进度统计

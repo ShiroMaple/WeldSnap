@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 /**
  * 导入 Excel 焊口信息数据接口 (管理员权限)
  * POST /api/admin/import

@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 /**
  * 批量删除管线/焊口 API 接口 (管理员权限)
  * POST /api/admin/records/bulk-delete

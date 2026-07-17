@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 /**
  * 批量下载清单生成接口 (需登录)
  * POST /api/project/export-manifest

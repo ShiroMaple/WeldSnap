@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 /**
  * 云端归档照片下载接口 (管理员权限)
  * GET /api/admin/download?path=objectKey

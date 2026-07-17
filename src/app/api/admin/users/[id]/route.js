@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 /**
  * 用户管理接口 (修改与删除特定用户)
  * DELETE /api/admin/users/[id] - 删除用户

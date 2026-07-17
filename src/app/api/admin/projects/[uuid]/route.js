@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 /**
  * 特定项目更新与删除 API 接口 (系统管理员权限)
  * PUT    /api/admin/projects/[uuid] - 更新项目配置

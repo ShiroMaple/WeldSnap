@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 /**
  * 用户退出接口
  * POST /api/auth/logout

@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 /**
  * 获取批量打印管线二维码数据接口 (基于 UUID 与项目联动)
  * GET /api/admin/qrcodes?project_uuid=...&uuids=...

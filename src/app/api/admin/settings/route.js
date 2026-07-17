@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 /**
  * 获取及保存系统配置接口 (系统管理员权限)
  *
