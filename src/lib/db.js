@@ -31,7 +31,7 @@ db.exec('PRAGMA foreign_keys = ON'); // 开启外键约束，以支持级联删�
 logger.info({ msg: 'db.initialized', path: DB_PATH });
 
 // ─── 表结构初始化 ─────────────────────────────────────────
-let retries = 5;
+let retries = 30;
 while (retries > 0) {
   try {
     // 检查 users 表是否存在以确认全部初始化已落盘
@@ -102,9 +102,9 @@ while (retries > 0) {
     if (err.message.includes('locked')) {
       retries--;
       logger.warn({ msg: 'db.init_locked', retries_remaining: retries });
-      // 同步等待 100 毫秒后重试
+      // 同步等待 150 毫秒后重试
       const start = Date.now();
-      while (Date.now() - start < 100) {}
+      while (Date.now() - start < 150) {}
     } else {
       throw err;
     }

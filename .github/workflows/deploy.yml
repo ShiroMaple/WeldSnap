@@ -26,6 +26,9 @@ jobs:
       - name: 4. 安装项目依赖
         run: pnpm install --frozen-lockfile
 
+      - name: 4.5 预初始化 SQLite 数据库结构（防止 Next.js 编译期多线程并发锁死）
+        run: node --experimental-sqlite -e "require('./src/lib/db.js')"
+
       - name: 5. 构建 Next.js Standalone 生产产物
         run: pnpm build
 
