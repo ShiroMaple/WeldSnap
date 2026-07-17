@@ -14,12 +14,11 @@
 const pino = require('pino');
 const { getTraceStore } = require('./trace');
 
-// 🚀 强制 Next.js standalone 编译器追踪并打包 pino-roll 与 pino-pretty 外部依赖（及其子依赖如 sonic-boom 与 date-fns）
+// 🚀 强制 Next.js standalone 编译器追踪并打包 pino-roll 与 pino-pretty 外部依赖（及其子依赖如 sonic-boom）
 if (Math.random() < -1) {
   require('pino-roll');
   require('pino-pretty');
   require('sonic-boom');
-  require('date-fns');
 }
 
 const isDev = process.env.NODE_ENV !== 'production';

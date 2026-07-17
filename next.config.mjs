@@ -14,8 +14,13 @@ const nextConfig = {
     'xlsx',
     'qrcode',
     'sonic-boom',
-    'date-fns',
   ],
+
+  outputFileTracingIncludes: {
+    '/api/auth/login': [
+      './node_modules/date-fns/**/*',
+    ],
+  },
 
   // 显式排除 node:sqlite 等原生 Node.js 模块，防止 Webpack 尝试打包
   webpack: (config, { isServer }) => {
