@@ -1,4 +1,4 @@
-name: Deploy WeldSnap to Server
+name: WeldSnap V2 Deploy CI/CD (GitHub-hosted)
 
 on:
   push:
@@ -7,62 +7,68 @@ on:
 
 jobs:
   deploy:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest # 采用 GitHub 官方云端托管虚拟机
 
     steps:
-      - name: Checkout Code
+      - name: 1. 拉取最新代码
         uses: actions/checkout@v4
 
-      - name: Setup Node.js v22
+      - name: 2. 初始化 Node.js 环境 (对齐服务器 v24 版本)
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24' # 🚀 让云端打包环境使用 v24，与服务器完全对齐！
 
-      - name: Install pnpm
+      - name: 3. 安装并配置 pnpm
         uses: pnpm/action-setup@v4
 
-      - name: Install Dependencies
+      - name: 4. 安装项目依赖
         run: pnpm install --frozen-lockfile
 
-      - name: Build Next.js Standalone
+      - name: 5. 构建 Next.js Standalone 生产产物
         run: pnpm build
 
-      - name: Sync Files to Web Directory
+      - name: 6. 在云端进行 Standalone 静态资源缝合与装箱
+        # 将编译产物进行物理打包，坚决不包含 data/ 和 exports/，保障服务器持久化数据资产安全
         run: |
-          DEPLOY_DIR=/var/www/WeldSnap
-          mkdir -p "$DEPLOY_DIR"
+          mkdir -p .next/standalone/public
+          cp -r public/* .next/standalone/public/ 2>/dev/null || true
+          mkdir -p .next/standalone/.next/static
+          cp -r .next/static/* .next/standalone/.next/static/ 2>/dev/null || true
+          tar -czf release.tar.gz -C .next/standalone .
 
-          # 同步源码和构建产物，排除持久化数据和开发产物
-          rsync -av --delete \
-            --exclude='data' \
-            --exclude='exports' \
-            --exclude='node_modules' \
-            --exclude='.git' \
-            --exclude='.github' \
-            --exclude='config.json' \
-            --exclude='.next/cache' \
-            ./ "$DEPLOY_DIR/"
+      - name: 7. 通过 SCP 跨公网将压缩产物推送到你的 ECS 服务器
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.SERVER_HOST }}       # 🚀 已完美统一变量名
+          username: ${{ secrets.SERVER_USER }}   # 🚀 已完美统一变量名
+          key: ${{ secrets.SERVER_KEY }}        # 🚀 已完美统一变量名
+          source: "release.tar.gz"
+          target: "/var/www/WeldSnap"            # 适配你服务器实际的 /var/www/ 部署根路径
 
-          # Next.js standalone 需要静态资源和 public 目录
-          mkdir -p "$DEPLOY_DIR/.next/standalone/public"
-          cp -r public/* "$DEPLOY_DIR/.next/standalone/public/" 2>/dev/null || true
-          mkdir -p "$DEPLOY_DIR/.next/standalone/.next/static"
-          cp -r .next/static/* "$DEPLOY_DIR/.next/standalone/.next/static/" 2>/dev/null || true
-
-          # 确保持久化目录存在
-          mkdir -p "$DEPLOY_DIR/data"
-          mkdir -p "$DEPLOY_DIR/exports"
-
-      - name: Install Dependencies and Restart Server
+      - name: 8. 通过 SSH 远程登录服务器，安全解压并重启 PM2 守护进程
+        uses: appleboy/ssh-action@master
         env:
-          RUNNER_TRACKING_ID: to-prevent-killing  # 防止 GitHub Actions 完成后杀掉 PM2 守护的 Node 后台进程
-        run: |
-          cd /var/www/WeldSnap
-          pnpm install --frozen-lockfile
-          # PM2 重启 Next.js standalone 服务（非 V1 Express server.js）
-          pm2 delete weld-photo-system || true
-          pm2 start .next/standalone/server.js \
-            --name weld-photo-system \
-            --interpreter /opt/node-v22/bin/node \
-            --node-args="--experimental-sqlite"
-          pm2 save
+          RUNNER_TRACKING_ID: to-prevent-killing # 继承防杀销毁标识
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_KEY }}
+          envs: RUNNER_TRACKING_ID
+          script: |
+            cd /var/www/WeldSnap
+            
+            # 解压新产物
+            tar -xzf release.tar.gz
+            rm release.tar.gz
+            
+            # 确保存储目录和内置 SQLite 隔离区绝对完好
+            mkdir -p data
+            mkdir -p exports
+            
+            # 🚀 优雅重构 PM2：移除原本写死的 /opt/node-v22/ 绝对路径，直接使用服务器全局最新的 node v24
+            pm2 delete weld-photo-system || true
+            pm2 start server.js \
+              --name weld-photo-system \
+              --interpreter node \
+              --node-args="--experimental-sqlite"
+            pm2 save
