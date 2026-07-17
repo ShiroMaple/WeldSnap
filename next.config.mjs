@@ -3,12 +3,6 @@ const nextConfig = {
   // 仅在非 Windows (如 Linux CI/CD 容器) 环境下输出 standalone 格式以规避 Windows symlink EPERM 权限错误
   output: process.platform === 'win32' ? undefined : 'standalone',
 
-  outputFileTracingIncludes: {
-    '/**/*': [
-      'node_modules/pino-roll/**/*',
-      'node_modules/pino-pretty/**/*',
-    ],
-  },
 
   // 防止 Webpack 打包 Pino worker_threads 等外部依赖
   serverExternalPackages: [
