@@ -17,99 +17,118 @@ const { logger } = require('./logger');
 // ─── 数据库初始化 ─────────────────────────────────────────
 const DB_PATH = path.join(process.cwd(), 'data', 'app.db');
 
-// 确保 data 目录存在
-const dataDir = path.dirname(DB_PATH);
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
-}
+let dbInstance = null;
 
-const db = new DatabaseSync(DB_PATH);
-db.exec('PRAGMA journal_mode = WAL');
-db.exec('PRAGMA busy_timeout = 5000'); // 🚀 设置繁忙超时，防止高并发构建时死锁
-db.exec('PRAGMA foreign_keys = ON'); // 开启外键约束，以支持级联删除
+function getDbInstance() {
+  if (!dbInstance) {
+    const dataDir = path.dirname(DB_PATH);
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true });
+    }
 
-logger.info({ msg: 'db.initialized', path: DB_PATH });
+    const db = new DatabaseSync(DB_PATH);
+    db.exec('PRAGMA journal_mode = WAL');
+    db.exec('PRAGMA busy_timeout = 5000');
+    db.exec('PRAGMA foreign_keys = ON');
 
-// ─── 表结构初始化 ─────────────────────────────────────────
-let retries = 30;
-while (retries > 0) {
-  try {
-    // 检查 users 表是否存在以确认全部初始化已落盘
-    const tableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='users'").get();
-    if (!tableExists) {
-      db.exec(`
-        CREATE TABLE IF NOT EXISTS projects (
-          id              INTEGER PRIMARY KEY AUTOINCREMENT,
-          uuid            TEXT UNIQUE NOT NULL,
-          construction_no TEXT UNIQUE NOT NULL,
-          project_name    TEXT NOT NULL,
-          remark          TEXT,
-          status          TEXT NOT NULL DEFAULT '进行中',
-          pipeline_prefix TEXT,
-          weld_prefix     TEXT,
-          created_at      TEXT DEFAULT (datetime('now','localtime'))
-        );
+    logger.info({ msg: 'db.initialized', path: DB_PATH });
 
-        CREATE TABLE IF NOT EXISTS pipelines (
-          id              INTEGER PRIMARY KEY AUTOINCREMENT,
-          uuid            TEXT UNIQUE NOT NULL,
-          project_id      INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-          pipeline_no     TEXT NOT NULL,
-          created_at      TEXT DEFAULT (datetime('now','localtime')),
-          UNIQUE(project_id, pipeline_no)
-        );
+    // ─── 表结构初始化 ─────────────────────────────────────────
+    let retries = 30;
+    while (retries > 0) {
+      try {
+        // 检查 users 表是否存在以确认全部初始化已落盘
+        const tableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='users'").get();
+        if (!tableExists) {
+          db.exec(`
+            CREATE TABLE IF NOT EXISTS projects (
+              id              INTEGER PRIMARY KEY AUTOINCREMENT,
+              uuid            TEXT UNIQUE NOT NULL,
+              construction_no TEXT UNIQUE NOT NULL,
+              project_name    TEXT NOT NULL,
+              remark          TEXT,
+              status          TEXT NOT NULL DEFAULT '进行中',
+              pipeline_prefix TEXT,
+              weld_prefix     TEXT,
+              created_at      TEXT DEFAULT (datetime('now','localtime'))
+            );
 
-        CREATE TABLE IF NOT EXISTS weld_records (
-          id              INTEGER PRIMARY KEY AUTOINCREMENT,
-          uuid            TEXT UNIQUE NOT NULL,
-          pipeline_id      INTEGER NOT NULL REFERENCES pipelines(id) ON DELETE CASCADE,
-          weld_no         TEXT NOT NULL,
-          photo_zudui     TEXT,
-          photo_dadi      TEXT,
-          photo_gaimian   TEXT,
-          uploaded_by     TEXT,
-          uploaded_at     TEXT,
-          create_source   TEXT NOT NULL DEFAULT '管理控制台创建',
-          created_at      TEXT DEFAULT (datetime('now','localtime')),
-          UNIQUE(pipeline_id, weld_no)
-        );
+            CREATE TABLE IF NOT EXISTS pipelines (
+              id              INTEGER PRIMARY KEY AUTOINCREMENT,
+              uuid            TEXT UNIQUE NOT NULL,
+              project_id      INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+              pipeline_no     TEXT NOT NULL,
+              created_at      TEXT DEFAULT (datetime('now','localtime')),
+              UNIQUE(project_id, pipeline_no)
+            );
 
-        CREATE TABLE IF NOT EXISTS users (
-          id              INTEGER PRIMARY KEY AUTOINCREMENT,
-          username        TEXT UNIQUE NOT NULL,
-          password_hash   TEXT NOT NULL,
-          role            TEXT NOT NULL DEFAULT 'worker',
-          display_name    TEXT,
-          created_at      TEXT DEFAULT (datetime('now','localtime')),
-          last_login_at   TEXT
-        );
-      `);
+            CREATE TABLE IF NOT EXISTS weld_records (
+              id              INTEGER PRIMARY KEY AUTOINCREMENT,
+              uuid            TEXT UNIQUE NOT NULL,
+              pipeline_id      INTEGER NOT NULL REFERENCES pipelines(id) ON DELETE CASCADE,
+              weld_no         TEXT NOT NULL,
+              photo_zudui     TEXT,
+              photo_dadi      TEXT,
+              photo_gaimian   TEXT,
+              uploaded_by     TEXT,
+              uploaded_at     TEXT,
+              create_source   TEXT NOT NULL DEFAULT '管理控制台创建',
+              created_at      TEXT DEFAULT (datetime('now','localtime')),
+              UNIQUE(pipeline_id, weld_no)
+            );
 
-      // ─── 创建默认管理员 ──────────────────────────────────────
-      const adminExists = db
-        .prepare('SELECT id FROM users WHERE username = ?')
-        .get('admin');
-      if (!adminExists) {
-        const hash = bcrypt.hashSync('admin123', 10);
-        db.prepare(
-          'INSERT INTO users (username, password_hash, role, display_name) VALUES (?, ?, ?, ?)'
-        ).run('admin', hash, 'admin', '系统管理员');
-        logger.info({ msg: 'db.admin_created', username: 'admin' });
+            CREATE TABLE IF NOT EXISTS users (
+              id              INTEGER PRIMARY KEY AUTOINCREMENT,
+              username        TEXT UNIQUE NOT NULL,
+              password_hash   TEXT NOT NULL,
+              role            TEXT NOT NULL DEFAULT 'worker',
+              display_name    TEXT,
+              created_at      TEXT DEFAULT (datetime('now','localtime')),
+              last_login_at   TEXT
+            );
+          `);
+
+          // ─── 创建默认管理员 ──────────────────────────────────────
+          const adminExists = db
+            .prepare('SELECT id FROM users WHERE username = ?')
+            .get('admin');
+          if (!adminExists) {
+            const hash = bcrypt.hashSync('admin123', 10);
+            db.prepare(
+              'INSERT INTO users (username, password_hash, role, display_name) VALUES (?, ?, ?, ?)'
+            ).run('admin', hash, 'admin', '系统管理员');
+            logger.info({ msg: 'db.admin_created', username: 'admin' });
+          }
+        }
+        break; // 成功执行，跳出循环
+      } catch (err) {
+        if (err.message.includes('locked')) {
+          retries--;
+          logger.warn({ msg: 'db.init_locked', retries_remaining: retries });
+          // 同步等待 150 毫秒后重试
+          const start = Date.now();
+          while (Date.now() - start < 150) {}
+        } else {
+          throw err;
+        }
       }
     }
-    break; // 成功执行，跳出循环
-  } catch (err) {
-    if (err.message.includes('locked')) {
-      retries--;
-      logger.warn({ msg: 'db.init_locked', retries_remaining: retries });
-      // 同步等待 150 毫秒后重试
-      const start = Date.now();
-      while (Date.now() - start < 150) {}
-    } else {
-      throw err;
-    }
+    dbInstance = db;
   }
+  return dbInstance;
 }
+
+// ─── 使用 Proxy 实现数据库连接懒加载，防止 Next.js 编译期加载模块时并发抢占文件锁 ───
+const db = new Proxy({}, {
+  get(target, prop) {
+    const instance = getDbInstance();
+    const value = instance[prop];
+    if (typeof value === 'function') {
+      return value.bind(instance);
+    }
+    return value;
+  }
+});
 
 // ─── 用户认证相关 ─────────────────────────────────────────
 function verifyUser(username, password) {
