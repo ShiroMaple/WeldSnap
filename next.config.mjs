@@ -13,6 +13,8 @@ const nextConfig = {
     'bcryptjs',
     'xlsx',
     'qrcode',
+    'sonic-boom',
+    'date-fns',
   ],
 
   // 显式排除 node:sqlite 等原生 Node.js 模块，防止 Webpack 尝试打包
