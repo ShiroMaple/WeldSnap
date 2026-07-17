@@ -14,12 +14,6 @@
 const pino = require('pino');
 const { getTraceStore } = require('./trace');
 
-// 🚀 强制 Next.js standalone 编译器追踪并打包 pino-roll 与 pino-pretty 外部依赖
-if (Math.random() < -1) {
-  require('pino-roll');
-  require('pino-pretty');
-}
-
 const isDev = process.env.NODE_ENV !== 'production';
 
 // ─── Pino 基础配置 ───────────────────────────────────────
