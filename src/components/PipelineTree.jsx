@@ -4,10 +4,9 @@
  * 左侧管线号导航树组件 (Client Component)
  *
  * 特性：
- *   - 支持多选（全选/反选），用于批量删除与批量二维码打印
- *   - 直接展示 QR 查看按钮，无需 Hover
- *   - 自动适配项目前缀添加管线（有前缀时自动递增 PL-001，无前缀时提供输入框）
- *   - 级联统计每个管线的完工情况比例
+ *   - 将“管线筛选”放到列表最上方，与右侧的“焊口筛选”对齐。
+ *   - 将“导入管线”“批量打印”“添加管线”改为三个并列的按钮，紧靠“管线筛选”下方。
+ *   - 支持双击编辑管线号，多选批量打印与删除。
  */
 
 import { useState } from 'react';
@@ -17,17 +16,21 @@ export default function PipelineTree({
   projectInfo = { pipeline_prefix: '', weld_prefix: '', construction_no: '', project_name: '' },
   pipelines = [],
   selectedPipelineUuid = '',
-  onSelectPipelineUuid = () => {},
-  onImportClick = () => {},
-  onShowQR = () => {},
-  onRefresh = () => {},
+  onSelectPipelineUuid = () => { },
+  onImportClick = () => { },
+  onShowQR = () => { },
+  onRefresh = () => { },
   currentUser = {},
 }) {
   const [filterQuery, setFilterQuery] = useState('');
-  
+
   // 选中的管线 UUID 集合
   const [selectedUuids, setSelectedUuids] = useState([]);
-  const [newPipelineName, setNewPipelineName] = useState('');
+
+  // 编辑状态
+  const [editingUuid, setEditingUuid] = useState('');
+  const [editingValue, setEditingValue] = useState('');
+  const [editingSaving, setEditingSaving] = useState(false);
   const [addingPipeline, setAddingPipeline] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -60,9 +63,20 @@ export default function PipelineTree({
   // 3. 新建管线
   const handleAddPipeline = async () => {
     if (!projectUuid) return;
-    if (!projectInfo.pipeline_prefix && !newPipelineName.trim()) {
-      alert('请输入管线号');
-      return;
+
+    let pipelineNo = '';
+    if (projectInfo.pipeline_prefix) {
+      // 有前缀，由后端自动生成下一个
+      pipelineNo = '';
+    } else {
+      // 无前缀，弹出提示手动输入
+      const promptVal = prompt('请输入新的管线号:');
+      if (promptVal === null) return; // 取消
+      pipelineNo = promptVal.trim();
+      if (!pipelineNo) {
+        alert('管线号不能为空');
+        return;
+      }
     }
 
     setAddingPipeline(true);
@@ -72,12 +86,11 @@ export default function PipelineTree({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           project_uuid: projectUuid,
-          pipeline_no: projectInfo.pipeline_prefix ? '' : newPipelineName.trim(),
+          pipeline_no: pipelineNo,
         }),
       });
       const data = await resp.json();
       if (resp.ok && data.success) {
-        setNewPipelineName('');
         if (onRefresh) onRefresh();
       } else {
         alert(data.error || '创建管线失败');
@@ -96,8 +109,8 @@ export default function PipelineTree({
       return;
     }
 
-    const confirmMsg = force 
-      ? '⚠️ 确定强行删除所有选中的管线及其关联的所有焊口与照片吗？此操作不可逆！' 
+    const confirmMsg = force
+      ? '⚠️ 确定强行删除所有选中的管线及其关联的所有焊口与照片吗？此操作不可逆！'
       : `确定批量删除选中的 ${selectedUuids.length} 条管线记录吗？`;
 
     if (!confirm(confirmMsg)) return;
@@ -128,6 +141,8 @@ export default function PipelineTree({
               handleBulkDeletePipelines(true);
               return;
             }
+          } else if (currentUser.role === 'project_admin') {
+            alert(`${data.error}\n\n项目管理员无权删除包含照片的记录，请联系系统管理员处理。`);
           } else {
             alert(data.error);
           }
@@ -142,55 +157,108 @@ export default function PipelineTree({
     }
   };
 
-  // 5. 打印链接生成
+  // 5. 内联编辑管线号
+  const handleStartEditPipeline = (uuid, currentNo) => {
+    setEditingUuid(uuid);
+    setEditingValue(currentNo);
+  };
+
+  const handleSaveEditPipeline = async () => {
+    if (!editingUuid || editingSaving) return;
+    const no = editingValue.trim();
+    if (!no) {
+      alert('管线号不能为空');
+      return;
+    }
+
+    setEditingSaving(true);
+    try {
+      const resp = await fetch(`/api/admin/pipelines/${editingUuid}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pipeline_no: no }),
+      });
+      const data = await resp.json();
+      if (resp.ok && data.success) {
+        setEditingUuid('');
+        setEditingValue('');
+        if (onRefresh) onRefresh();
+      } else {
+        alert(data.error || '编辑失败');
+      }
+    } catch {
+      alert('网络连接错误');
+    } finally {
+      setEditingSaving(false);
+    }
+  };
+
+  const handleCancelEditPipeline = () => {
+    setEditingUuid('');
+    setEditingValue('');
+  };
+
+  // 6. 打印链接生成
   const printUrl = selectedUuids.length > 0
     ? `/qrcodes-print?project_uuid=${projectUuid}&uuids=${selectedUuids.join(',')}`
     : `/qrcodes-print?project_uuid=${projectUuid}`;
 
   return (
     <aside className="w-85 bg-[#f4f4f4] border-r border-[#e0e0e0] flex flex-col h-full select-none">
-      
-      {/* Excel 导入区块 */}
-      <div className="p-4 border-b border-[#e0e0e0] space-y-3">
-        <button
-          onClick={onImportClick}
-          className="w-full h-10 bg-[#0f62fe] hover:bg-[#0353e9] active:bg-[#002d9c] text-white text-[13px] font-medium tracking-[0.16px] transition-colors duration-150 rounded-none border-none outline-none cursor-pointer flex items-center justify-center gap-2"
-        >
-          <span>📥</span> 导入管线焊口 Excel
-        </button>
 
-        <div className="flex justify-between items-center text-[12px] px-1">
-          <span className="text-[#525252]">管线共 {pipelines.length} 条</span>
-          <a
-            href={printUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-[#0f62fe] hover:underline flex items-center gap-1 font-medium"
-          >
-            🖨️ {selectedUuids.length > 0 ? `打印已选二维码 (${selectedUuids.length})` : '批量打印二维码'}
-          </a>
+      {/* 1. 管线筛选区域 - 最上方，高度固定 h-16 以便与右侧对齐 */}
+      <div className="h-16 px-4 border-b border-[#e0e0e0] bg-[#f4f4f4] flex items-center select-none">
+        <div className="flex items-center gap-2 w-full">
+          <span className="text-[12px] text-[#525252] shrink-0 font-medium">管线筛选:</span>
+          <input
+            type="text"
+            value={filterQuery}
+            onChange={(e) => setFilterQuery(e.target.value)}
+            placeholder="输入管线号筛选..."
+            className="w-full h-8 px-3 bg-white border border-[#c6c6c6] text-[#161616] text-[13px] outline-none focus:border-[#0f62fe] rounded-none placeholder-[#8d8d8d]"
+          />
         </div>
       </div>
 
-      {/* 搜索与快捷多选栏 */}
-      <div className="px-4 py-2 bg-[#e8e8e8]/30 border-b border-[#e0e0e0] space-y-2">
-        <input
-          type="text"
-          value={filterQuery}
-          onChange={(e) => setFilterQuery(e.target.value)}
-          placeholder="输入管线号筛选..."
-          className="w-full h-8 px-3 bg-white border border-[#c6c6c6] text-[#161616] text-[13px] outline-none focus:border-[#0f62fe] rounded-none placeholder-[#8d8d8d]"
-        />
+      {/* 2. 快捷操作栏（三个并列按钮）直接放置在管线号筛选下方 (固定高度 h-[76px] 以便与右侧对齐) */}
+      <div className="h-[76px] px-4 py-2.5 bg-[#f4f4f4] border-b border-[#e0e0e0] flex flex-col justify-between select-none">
+        <div className="grid grid-cols-3 gap-1.5">
+          <button
+            type="button"
+            disabled={addingPipeline}
+            onClick={handleAddPipeline}
+            className="h-8 bg-[#0f62fe] hover:bg-[#0353e9] text-white text-[11px] font-medium cursor-pointer rounded-none border-none outline-none flex items-center justify-center gap-1 font-sans"
+          >
+            {addingPipeline ? '正在生成...' : '+ 添加管线'}
+          </button>
 
-        <div className="flex justify-between items-center text-[11px] text-[#525252] pt-1">
+          <button
+            type="button"
+            onClick={() => window.open(printUrl, '_blank')}
+            className="h-8 bg-transparent border border-[#0f62fe] text-[#0f62fe] hover:bg-[#0f62fe]/10 text-[11px] font-medium cursor-pointer rounded-none outline-none flex items-center justify-center gap-1 font-sans"
+          >
+            打印二维码
+          </button>
+
+          <button
+            onClick={onImportClick}
+            className="h-8 bg-[#393939] hover:bg-[#4c4c4c] text-white text-[11px] font-medium cursor-pointer rounded-none border-none outline-none flex items-center justify-center gap-1 font-sans"
+          >
+            批量导入
+          </button>
+
+        </div>
+
+        {/* 选中的多选与数量提示 */}
+        <div className="flex justify-between items-center text-[11px] text-[#525252]">
           <div className="flex gap-2">
             <button onClick={handleSelectAll} className="hover:text-[#0f62fe] cursor-pointer">全选</button>
             <span>/</span>
-            <button onClick={handleDeselectAll} className="hover:text-[#0f62fe] cursor-pointer">全清</button>
+            <button onClick={handleDeselectAll} className="hover:text-[#0f62fe] cursor-pointer">清空</button>
             <span>/</span>
             <button onClick={handleToggleInvert} className="hover:text-[#0f62fe] cursor-pointer">反选</button>
           </div>
-          {selectedUuids.length > 0 && (
+          {selectedUuids.length > 0 ? (
             <button
               onClick={() => handleBulkDeletePipelines(false)}
               disabled={deleting}
@@ -198,41 +266,10 @@ export default function PipelineTree({
             >
               🗑️ 删除已选 ({selectedUuids.length})
             </button>
+          ) : (
+            <span className="font-mono text-[12px] text-[#525252]">管线共 {pipelines.length} 条</span>
           )}
         </div>
-      </div>
-
-      {/* 快捷新增管线控制 */}
-      <div className="px-4 py-3 bg-[#e8e8e8]/50 border-b border-[#e0e0e0]">
-        {projectInfo.pipeline_prefix ? (
-          <button
-            type="button"
-            disabled={addingPipeline}
-            onClick={handleAddPipeline}
-            className="w-full h-9 bg-white border border-[#0f62fe] text-[#0f62fe] hover:bg-[#edf5ff] text-[12px] font-medium cursor-pointer rounded-none outline-none"
-          >
-            {addingPipeline ? '正在生成...' : `+ 自动生成管线 (前缀: ${projectInfo.pipeline_prefix}-XXX)`}
-          </button>
-        ) : (
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={newPipelineName}
-              onChange={(e) => setNewPipelineName(e.target.value)}
-              placeholder="新增管线号..."
-              disabled={addingPipeline}
-              className="flex-1 h-9 px-3 bg-white border border-[#c6c6c6] text-[12px] outline-none focus:border-[#0f62fe] rounded-none"
-            />
-            <button
-              type="button"
-              disabled={addingPipeline}
-              onClick={handleAddPipeline}
-              className="h-9 px-3 bg-[#393939] hover:bg-[#4c4c4c] text-white text-[12px] cursor-pointer rounded-none border-none font-medium"
-            >
-              添加
-            </button>
-          </div>
-        )}
       </div>
 
       {/* 列表树导航 */}
@@ -251,10 +288,9 @@ export default function PipelineTree({
                   key={p.uuid}
                   onClick={() => onSelectPipelineUuid(p.uuid, p.pipeline_no)}
                   className={`h-11 px-4 flex items-center justify-between border-l-4 cursor-pointer transition-colors duration-100 relative text-[13px]
-                    ${
-                      isActive
-                        ? 'bg-[#edf5ff] border-[#0f62fe] text-[#0f62fe] font-medium'
-                        : 'border-transparent text-[#161616] hover:bg-[#e8e8e8]/60'
+                    ${isActive
+                      ? 'bg-[#edf5ff] border-[#0f62fe] text-[#0f62fe] font-medium'
+                      : 'border-transparent text-[#161616] hover:bg-[#e8e8e8]/60'
                     }
                   `}
                 >
@@ -266,11 +302,35 @@ export default function PipelineTree({
                       onClick={(e) => e.stopPropagation()} // 阻止触发选中管线
                       className="w-4 h-4 cursor-pointer rounded-none accent-[#0f62fe]"
                     />
-                    <span className="truncate font-mono flex-1" title={p.pipeline_no}>
-                      {p.pipeline_no}
-                    </span>
+                    {editingUuid === p.uuid ? (
+                      <input
+                        type="text"
+                        value={editingValue}
+                        onChange={(e) => setEditingValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleSaveEditPipeline();
+                          if (e.key === 'Escape') handleCancelEditPipeline();
+                        }}
+                        onBlur={handleSaveEditPipeline}
+                        disabled={editingSaving}
+                        autoFocus
+                        onClick={(e) => e.stopPropagation()}
+                        className="flex-1 h-7 px-1 bg-white border border-[#0f62fe] text-[12px] font-mono outline-none rounded-none"
+                      />
+                    ) : (
+                      <span
+                        className="truncate font-mono flex-1 cursor-text"
+                        title="双击编辑管线号"
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          handleStartEditPipeline(p.uuid, p.pipeline_no);
+                        }}
+                      >
+                        {p.pipeline_no}
+                      </span>
+                    )}
                   </div>
-                  
+
                   <div className="flex items-center gap-2">
                     {/* 直接显示 QR 查看按钮 */}
                     <button
@@ -286,10 +346,9 @@ export default function PipelineTree({
 
                     <span
                       className={`text-[11px] px-1.5 py-0.5 font-mono rounded-none
-                        ${
-                          isAllDone
-                            ? 'bg-[#24a148]/10 text-[#24a148]'
-                            : 'bg-black/5 text-[#525252]'
+                        ${isAllDone
+                          ? 'bg-[#24a148]/10 text-[#24a148]'
+                          : 'bg-black/5 text-[#525252]'
                         }
                       `}
                     >

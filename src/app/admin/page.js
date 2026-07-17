@@ -97,7 +97,7 @@ export default function AdminPage() {
     try {
       const resp = await fetch('/api/auth/check');
       const data = await resp.json();
-      if (!data.logged_in || data.user.role !== 'admin') {
+      if (!data.logged_in || (data.user.role !== 'admin' && data.user.role !== 'project_admin')) {
         window.location.href = '/login';
         return;
       }
@@ -114,7 +114,7 @@ export default function AdminPage() {
       if (resp.ok && data.success) {
         setProjectsList(data.projects || []);
       }
-    } catch {}
+    } catch { }
   };
 
   const fetchStats = async (projectUuid) => {
@@ -123,7 +123,7 @@ export default function AdminPage() {
       const resp = await fetch(`/api/admin/stats?project_uuid=${projectUuid}`);
       const data = await resp.json();
       if (resp.ok && data.success) setStats(data.stats);
-    } catch {}
+    } catch { }
   };
 
   const fetchPipelines = async (projectUuid) => {
@@ -133,7 +133,7 @@ export default function AdminPage() {
       const data = await resp.json();
       if (resp.ok && data.success) {
         setPipelines(data.pipelines || []);
-        
+
         // 如果当前没有选中管线，且有管线数据，默认选中第一个
         if (data.pipelines && data.pipelines.length > 0 && !selectedPipelineUuid) {
           const first = data.pipelines[0];
@@ -141,7 +141,7 @@ export default function AdminPage() {
           setSelectedPipelineNo(first.pipeline_no);
         }
       }
-    } catch {}
+    } catch { }
   };
 
   const fetchRecords = async (pipelineUuid) => {
@@ -158,7 +158,7 @@ export default function AdminPage() {
       const resp = await fetch(`/api/admin/records?${params.toString()}`);
       const data = await resp.json();
       if (resp.ok && data.success) setWeldRecords(data.records || []);
-    } catch {}
+    } catch { }
   };
 
   const fetchUsers = async () => {
@@ -166,7 +166,7 @@ export default function AdminPage() {
       const resp = await fetch('/api/admin/users');
       const data = await resp.json();
       if (resp.ok && data.success) setUsers(data.users || []);
-    } catch {}
+    } catch { }
   };
 
   const fetchSettings = async () => {
@@ -174,7 +174,7 @@ export default function AdminPage() {
       const resp = await fetch('/api/admin/settings');
       const data = await resp.json();
       if (resp.ok && data.success) setSettings(data);
-    } catch {}
+    } catch { }
   };
 
   // ─── 联动拉取 ──────────────────────────────────────────
@@ -510,17 +510,18 @@ export default function AdminPage() {
       <nav className="flex border-b border-[#e0e0e0] px-6 select-none bg-white">
         {[
           { id: 'dashboard', name: '管道焊口总览' },
-          { id: 'users', name: '成员管理' },
-          { id: 'settings', name: '系统设置' },
+          ...(currentUser?.role === 'admin' ? [
+            { id: 'users', name: '成员管理' },
+            { id: 'settings', name: '系统设置' },
+          ] : []),
         ].map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={`h-12 px-6 text-[14px] font-normal tracking-[0.16px] border-b-2 transition-all duration-150 cursor-pointer outline-none bg-transparent
-              ${
-                activeTab === tab.id
-                  ? 'border-[#0f62fe] text-[#0f62fe] font-semibold'
-                  : 'border-transparent text-[#525252] hover:text-[#161616]'
+              ${activeTab === tab.id
+                ? 'border-[#0f62fe] text-[#0f62fe] font-semibold'
+                : 'border-transparent text-[#525252] hover:text-[#161616]'
               }
             `}
           >
@@ -531,21 +532,21 @@ export default function AdminPage() {
 
       {/* 主面板内容区 */}
       <div className="flex-1 overflow-y-auto bg-white min-h-0">
-        
+
         {/* Panel: 管道焊口总览 */}
         {activeTab === 'dashboard' && (
           <div className="h-full flex flex-col min-h-0">
-            
+
             {/* 项目未选中状态：展示全局项目面板 */}
             {!selectedProjectUuid ? (
               <div className="p-6 space-y-6 select-none">
-                
+
                 {/* 顶层面板标题 */}
                 <div className="flex justify-between items-center flex-wrap gap-4">
                   <div>
                     <h2 className="text-[22px] font-light text-[#161616]">管道项目控制台</h2>
                     <p className="text-[13px] text-[#525252] mt-1">
-                      管理的起点是项目，您可以在此管理所有的施工号清单，并设定管线/焊口号的自增生成前缀。
+                      管理的起点是工程项目，您可以在此管理所有的施工号清单，并设定管线/焊口号的自增生成前缀。
                     </p>
                   </div>
                   <button
@@ -635,10 +636,9 @@ export default function AdminPage() {
                             <td className="py-3.5 px-4 text-center">
                               <span
                                 className={`inline-block px-2 py-0.5 text-[11px] font-medium
-                                  ${
-                                    p.status === '已完工'
-                                      ? 'bg-[#24a148]/10 text-[#24a148]'
-                                      : 'bg-[#f1c21b]/10 text-[#7d5c00]'
+                                  ${p.status === '已完工'
+                                    ? 'bg-[#24a148]/10 text-[#24a148]'
+                                    : 'bg-[#f1c21b]/10 text-[#7d5c00]'
                                   }
                                 `}
                               >
@@ -683,7 +683,7 @@ export default function AdminPage() {
             ) : (
               /* 项目选中状态：折叠项目列表，渲染管线焊口控制台 */
               <div className="flex-1 flex flex-col min-h-0 bg-white">
-                
+
                 {/* 顶部面包屑导航 Breadcrumbs */}
                 <div className="px-6 py-3 border-b border-[#e0e0e0] bg-[#f4f4f4] select-none text-[13px] flex items-center gap-2">
                   <button
@@ -694,8 +694,8 @@ export default function AdminPage() {
                   </button>
                   <span className="text-[#8d8d8d] font-mono">/</span>
                   <span className="text-[#161616] font-semibold flex items-center gap-1.5">
-                    🏗️ 施工号: <span className="font-mono text-[#0f62fe] bg-[#edf5ff] px-2 py-0.5">{selectedProject.construction_no}</span>
-                    <span className="text-[#525252] font-normal">({selectedProject.project_name})</span>
+                    <span className="font-mono text-[#0f62fe] bg-[#edf5ff] px-2 py-0.5">{selectedProject.project_name}</span>
+                    <span className="text-[#525252] font-normal">({selectedProject.construction_no})</span>
                   </span>
                 </div>
 
@@ -706,7 +706,7 @@ export default function AdminPage() {
 
                 {/* 分栏工作区 */}
                 <div className="flex-1 flex border-t border-[#e0e0e0] bg-white min-h-0">
-                  
+
                   {/* 左侧管线树导航 */}
                   <PipelineTree
                     projectUuid={selectedProjectUuid}
@@ -732,43 +732,47 @@ export default function AdminPage() {
 
                   {/* 右侧核心工作区 (直接渲染矩阵，移除云端归档浏览器页签以扩大版面) */}
                   <div className="flex-1 flex flex-col min-h-0 bg-white border-l border-[#e0e0e0]">
-                    
-                    {/* 焊口过滤检索区 */}
-                    {selectedPipelineUuid && (
-                      <div className="p-4 border-b border-[#e0e0e0] bg-[#f4f4f4] flex gap-4 items-center flex-wrap select-none">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[12px] text-[#525252]">焊口搜索:</span>
-                          <input
-                            type="text"
-                            value={filterWeld}
-                            onChange={(e) => setFilterWeld(e.target.value)}
-                            placeholder="关键字..."
-                            className="h-8 px-2 bg-white border border-[#c6c6c6] text-[13px] text-[#161616] outline-none focus:border-[#0f62fe] rounded-none placeholder-[#8d8d8d] w-32"
-                          />
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[12px] text-[#525252]">工序状态:</span>
-                          <select
-                            value={filterStatus}
-                            onChange={(e) => setFilterStatus(e.target.value)}
-                            className="h-8 px-2 bg-white border border-[#c6c6c6] text-[13px] text-[#161616] outline-none focus:border-[#0f62fe] rounded-none cursor-pointer"
+
+                    {/* 焊口过滤检索区 (统一高度为 h-16) */}
+                    <div className="h-16 px-4 border-b border-[#e0e0e0] bg-[#f4f4f4] flex gap-4 items-center select-none">
+                      {selectedPipelineUuid ? (
+                        <>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[12px] text-[#525252] font-medium">焊口筛选:</span>
+                            <input
+                              type="text"
+                              value={filterWeld}
+                              onChange={(e) => setFilterWeld(e.target.value)}
+                              placeholder="关键字..."
+                              className="h-8 px-2 bg-white border border-[#c6c6c6] text-[13px] text-[#161616] outline-none focus:border-[#0f62fe] rounded-none placeholder-[#8d8d8d] w-32"
+                            />
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[12px] text-[#525252] font-medium">工序状态:</span>
+                            <select
+                              value={filterStatus}
+                              onChange={(e) => setFilterStatus(e.target.value)}
+                              className="h-8 px-2 bg-white border border-[#c6c6c6] text-[13px] text-[#161616] outline-none focus:border-[#0f62fe] rounded-none cursor-pointer"
+                            >
+                              <option value="">全部</option>
+                              <option value="completed">已完成</option>
+                              <option value="pending">待录入</option>
+                            </select>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setFilterWeld('');
+                              setFilterStatus('');
+                            }}
+                            className="h-8 px-4 border border-[#c6c6c6] bg-white hover:bg-[#e8e8e8] text-[12px] text-[#161616] cursor-pointer rounded-none font-medium"
                           >
-                            <option value="">全部</option>
-                            <option value="completed">已完成</option>
-                            <option value="pending">待录入</option>
-                          </select>
-                        </div>
-                        <button
-                          onClick={() => {
-                            setFilterWeld('');
-                            setFilterStatus('');
-                          }}
-                          className="h-8 px-4 border border-[#c6c6c6] bg-white hover:bg-[#e8e8e8] text-[12px] text-[#161616] cursor-pointer rounded-none font-medium"
-                        >
-                          重置筛选
-                        </button>
-                      </div>
-                    )}
+                            重置筛选
+                          </button>
+                        </>
+                      ) : (
+                        <span className="text-[12px] text-[#8d8d8d] font-mono">请从左侧选择管线号查看焊口进度</span>
+                      )}
+                    </div>
 
                     <WeldMatrix
                       records={weldRecords}
@@ -831,14 +835,15 @@ export default function AdminPage() {
                         <td className="py-3 px-4">
                           <span
                             className={`inline-block px-2 py-0.5 text-[11px] rounded-none
-                              ${
-                                u.role === 'admin'
-                                  ? 'bg-[#edf5ff] text-[#0f62fe]'
-                                  : 'bg-[#f4f4f4] text-[#525252]'
+                              ${u.role === 'admin'
+                                ? 'bg-[#edf5ff] text-[#0f62fe]'
+                                : u.role === 'project_admin'
+                                ? 'bg-[#f1c21b]/20 text-[#161616]'
+                                : 'bg-[#f4f4f4] text-[#525252]'
                               }
                             `}
                           >
-                            {u.role === 'admin' ? '系统管理员' : '施工员'}
+                            {u.role === 'admin' ? '系统管理员' : u.role === 'project_admin' ? '项目管理员' : '施工员'}
                           </span>
                         </td>
                         <td className="py-3 px-4 font-mono text-[#525252]">{u.created_at}</td>
@@ -927,7 +932,7 @@ export default function AdminPage() {
         <div className="fixed inset-0 bg-black/40 z-[99999] flex items-center justify-center p-4">
           <div className="w-full max-w-[480px] bg-white border border-[#e0e0e0] p-6 rounded-none select-none">
             <h3 className="text-[18px] font-light text-[#161616] mb-4">新建管道项目</h3>
-            
+
             <form onSubmit={handleAddProject} className="space-y-4">
               <div className="flex flex-col">
                 <label className="text-[12px] text-[#525252] mb-1">项目施工号 (唯一)</label>
@@ -1012,7 +1017,7 @@ export default function AdminPage() {
         <div className="fixed inset-0 bg-black/40 z-[99999] flex items-center justify-center p-4">
           <div className="w-full max-w-[480px] bg-white border border-[#e0e0e0] p-6 rounded-none select-none">
             <h3 className="text-[18px] font-light text-[#161616] mb-4">编辑项目设置</h3>
-            
+
             <form onSubmit={handleEditProject} className="space-y-4">
               <div className="flex flex-col">
                 <label className="text-[12px] text-[#525252] mb-1">项目施工号 (唯一)</label>
@@ -1114,8 +1119,9 @@ export default function AdminPage() {
             </div>
 
             <p className="text-[13px] text-[#525252] mb-4">
-              上传 `.xlsx` 格式的焊口清单，系统会自动将管线焊口数据批量插入当前项目下方。<br />
-              数据表必须包含：<strong className="text-[#161616]">管线号、焊口号</strong>两列（表头列名支持包含关键字模糊匹配）。
+              上传 `.xlsx` 格式的焊口清单，批量新增管线和焊口到当前项目。<br />
+              数据表必须包含：<strong className="text-[#161616]">管线号、焊口号</strong>两列（表头列名支持包含关键字模糊匹配）。<br />
+              已存在的「管线号+焊口号」组合会被自动跳过，不会覆盖。
             </p>
 
             <div
@@ -1144,7 +1150,7 @@ export default function AdminPage() {
                 {importResult.success ? (
                   <div className="p-3 bg-[#24a148]/10 border border-[#24a148] text-[#24a148] text-[13px]">
                     <strong>🎉 导入成功！</strong>
-                    <span className="font-mono ml-2">行数: {importResult.total} | 新增: {importResult.inserted} | 重复跳过: {importResult.skipped}</span>
+                    <span className="font-mono ml-2">行数: {importResult.total} | 新增: {importResult.inserted} | 跳过: {importResult.skipped}</span>
                   </div>
                 ) : (
                   <div className="p-3 bg-[#da1e28]/10 border border-[#da1e28] text-[#da1e28] text-[13px]">
@@ -1154,7 +1160,26 @@ export default function AdminPage() {
               </div>
             )}
 
-            <div className="flex justify-end pt-4 border-t border-[#e0e0e0] mt-6">
+            <div className="flex items-center justify-between pt-4 border-t border-[#e0e0e0] mt-6">
+              <div className="flex gap-3">
+                <button
+                  onClick={() => window.open('/api/admin/export-template', '_blank')}
+                  className="h-8 px-4 bg-[#f4f4f4] hover:bg-[#e0e0e0] text-[#161616] text-[12px] cursor-pointer border border-[#c6c6c6] rounded-none"
+                >
+                  📥 下载导入模板
+                </button>
+                <button
+                  onClick={() => {
+                    if (selectedProjectUuid) {
+                      window.open(`/api/admin/projects/${selectedProjectUuid}/export`, '_blank');
+                    }
+                  }}
+                  disabled={!selectedProjectUuid}
+                  className="h-8 px-4 bg-[#f4f4f4] hover:bg-[#e0e0e0] text-[#161616] text-[12px] cursor-pointer border border-[#c6c6c6] rounded-none disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  📊 导出当前项目数据
+                </button>
+              </div>
               <button
                 onClick={() => setShowImportModal(false)}
                 className="h-9 px-5 bg-[#393939] hover:bg-[#4c4c4c] text-white text-[12px] cursor-pointer rounded-none border-none outline-none"
@@ -1224,7 +1249,7 @@ export default function AdminPage() {
         <div className="fixed inset-0 bg-black/40 z-[99999] flex items-center justify-center p-4">
           <div className="w-full max-w-[400px] bg-white border border-[#e0e0e0] p-6 rounded-none select-none">
             <h3 className="text-[18px] font-light text-[#161616] mb-4">添加系统新成员</h3>
-            
+
             <form onSubmit={handleAddUser} className="space-y-4">
               <div className="flex flex-col">
                 <label className="text-[12px] text-[#525252] mb-1">用户名</label>
@@ -1269,6 +1294,7 @@ export default function AdminPage() {
                   className="h-9 px-3 bg-[#f4f4f4] border-t-0 border-x-0 border-b-2 border-transparent focus:border-[#0f62fe] text-[13px] outline-none rounded-none cursor-pointer"
                 >
                   <option value="worker">施工人员</option>
+                  <option value="project_admin">项目管理员</option>
                   <option value="admin">系统管理员</option>
                 </select>
               </div>
@@ -1298,7 +1324,7 @@ export default function AdminPage() {
         <div className="fixed inset-0 bg-black/40 z-[99999] flex items-center justify-center p-4">
           <div className="w-full max-w-[400px] bg-white border border-[#e0e0e0] p-6 rounded-none select-none">
             <h3 className="text-[18px] font-light text-[#161616] mb-4">编辑系统成员信息</h3>
-            
+
             <form onSubmit={handleEditUser} className="space-y-4">
               <div className="flex flex-col">
                 <label className="text-[12px] text-[#525252] mb-1">用户名</label>
@@ -1348,6 +1374,7 @@ export default function AdminPage() {
                   className="h-9 px-3 bg-[#f4f4f4] border-t-0 border-x-0 border-b-2 border-transparent focus:border-[#0f62fe] text-[13px] outline-none rounded-none cursor-pointer"
                 >
                   <option value="worker">施工人员</option>
+                  <option value="project_admin">项目管理员</option>
                   <option value="admin">系统管理员</option>
                 </select>
               </div>

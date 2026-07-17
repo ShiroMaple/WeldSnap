@@ -291,13 +291,13 @@ function deleteProject(uuid) {
 // ─── 管线 (Pipelines) 业务操作 ────────────────────────────
 function listPipelines(projectUuid) {
   return db.prepare(`
-    SELECT 
+    SELECT
       pl.*,
       (SELECT COUNT(*) FROM weld_records WHERE pipeline_id = pl.id) as weld_count,
       (
-        SELECT COUNT(*) 
-        FROM weld_records 
-        WHERE pipeline_id = pl.id 
+        SELECT COUNT(*)
+        FROM weld_records
+        WHERE pipeline_id = pl.id
           AND photo_zudui IS NOT NULL AND photo_zudui NOT LIKE 'REJECTED:%'
           AND photo_dadi IS NOT NULL AND photo_dadi NOT LIKE 'REJECTED:%'
           AND photo_gaimian IS NOT NULL AND photo_gaimian NOT LIKE 'REJECTED:%'
@@ -306,6 +306,21 @@ function listPipelines(projectUuid) {
     JOIN projects pr ON pl.project_id = pr.id
     WHERE pr.uuid = ?
     ORDER BY pl.pipeline_no ASC
+  `).all(projectUuid);
+}
+
+/**
+ * 导出项目数据：该项目下所有管线和焊口，按管线号+焊口号排序。
+ * 返回 [{ pipeline_no, weld_no, create_source }, ...]
+ */
+function exportProjectData(projectUuid) {
+  return db.prepare(`
+    SELECT pl.pipeline_no, w.weld_no, w.create_source
+    FROM weld_records w
+    JOIN pipelines pl ON w.pipeline_id = pl.id
+    JOIN projects pr ON pl.project_id = pr.id
+    WHERE pr.uuid = ?
+    ORDER BY pl.pipeline_no ASC, w.weld_no ASC
   `).all(projectUuid);
 }
 
@@ -350,6 +365,29 @@ function createPipeline(projectUuid, pipelineNo) {
   } catch (e) {
     return { success: false, error: `管线号 "${finalPipelineNo}" 在当前项目中已存在，请勿重复创建` };
   }
+}
+
+function updatePipeline(uuid, pipelineNo) {
+  const pipeline = getPipelineByUuid(uuid);
+  if (!pipeline) {
+    return { success: false, error: '管线不存在' };
+  }
+  const no = String(pipelineNo).trim();
+  if (!no) {
+    return { success: false, error: '管线号不能为空' };
+  }
+  if (no === pipeline.pipeline_no) {
+    return { success: true, pipeline_no: no }; // 无变化
+  }
+  // 唯一性校验：同项目内不可重名
+  const conflict = db.prepare('SELECT id FROM pipelines WHERE project_id = ? AND pipeline_no = ? AND id != ?')
+    .get(pipeline.project_id, no, pipeline.id);
+  if (conflict) {
+    return { success: false, error: `管线号 "${no}" 在当前项目中已存在` };
+  }
+  db.prepare('UPDATE pipelines SET pipeline_no = ? WHERE uuid = ?').run(no, uuid);
+  logger.info({ msg: 'db.pipeline_updated', uuid, pipelineNo: no });
+  return { success: true, pipeline_no: no };
 }
 
 function deletePipeline(uuid) {
@@ -436,6 +474,29 @@ function createWeld(pipelineUuid, weldNo, createSource = '管理控制台创建'
   }
 }
 
+function updateWeld(uuid, weldNo) {
+  const weld = getWeldByUuid(uuid);
+  if (!weld) {
+    return { success: false, error: '焊口不存在' };
+  }
+  const no = String(weldNo).trim();
+  if (!no) {
+    return { success: false, error: '焊口号不能为空' };
+  }
+  if (no === weld.weld_no) {
+    return { success: true, weld_no: no }; // 无变化
+  }
+  // 唯一性校验：同管线内不可重名
+  const conflict = db.prepare('SELECT id FROM weld_records WHERE pipeline_id = ? AND weld_no = ? AND id != ?')
+    .get(weld.pipeline_id, no, weld.id);
+  if (conflict) {
+    return { success: false, error: `焊口号 "${no}" 在当前管线中已存在` };
+  }
+  db.prepare('UPDATE weld_records SET weld_no = ? WHERE uuid = ?').run(no, uuid);
+  logger.info({ msg: 'db.weld_updated', uuid, weldNo: no });
+  return { success: true, weld_no: no };
+}
+
 function deleteWeld(uuid) {
   try {
     db.prepare('DELETE FROM weld_records WHERE uuid = ?').run(uuid);
@@ -469,16 +530,18 @@ function getStats(projectUuid) {
   `).get(project.id).v;
 
   const completed = db.prepare(`
-    SELECT COUNT(*) as v 
+    SELECT (
+      SUM(CASE WHEN w.photo_zudui IS NOT NULL AND w.photo_zudui NOT LIKE 'REJECTED:%' THEN 1 ELSE 0 END) +
+      SUM(CASE WHEN w.photo_dadi IS NOT NULL AND w.photo_dadi NOT LIKE 'REJECTED:%' THEN 1 ELSE 0 END) +
+      SUM(CASE WHEN w.photo_gaimian IS NOT NULL AND w.photo_gaimian NOT LIKE 'REJECTED:%' THEN 1 ELSE 0 END)
+    ) as v
     FROM weld_records w
     JOIN pipelines p ON w.pipeline_id = p.id
     WHERE p.project_id = ?
-      AND photo_zudui IS NOT NULL AND photo_zudui NOT LIKE 'REJECTED:%'
-      AND photo_dadi IS NOT NULL AND photo_dadi NOT LIKE 'REJECTED:%'
-      AND photo_gaimian IS NOT NULL AND photo_gaimian NOT LIKE 'REJECTED:%'
-  `).get(project.id).v;
+  `).get(project.id).v || 0;
 
-  const pending = total - completed;
+  const totalProcesses = total * 3;
+  const pending = totalProcesses - completed;
   return { total, completed, pending };
 }
 
@@ -581,7 +644,7 @@ function importWeldRecords(rows, projectUuid) {
   try {
     const findPipelineStmt = db.prepare('SELECT id FROM pipelines WHERE project_id = ? AND pipeline_no = ?');
     const insertPipelineStmt = db.prepare('INSERT INTO pipelines (uuid, project_id, pipeline_no) VALUES (?, ?, ?)');
-    
+
     const findWeldStmt = db.prepare('SELECT id FROM weld_records WHERE pipeline_id = ? AND weld_no = ?');
     const insertWeldStmt = db.prepare('INSERT INTO weld_records (uuid, pipeline_id, weld_no) VALUES (?, ?, ?)');
 
@@ -594,7 +657,7 @@ function importWeldRecords(rows, projectUuid) {
         continue;
       }
 
-      // 1. 查找或插入管线
+      // 1. 查找或插入管线（合并：重名管线追加焊口）
       let pipelineRow = findPipelineStmt.get(project.id, pipelineNo);
       let pipelineId;
 
@@ -606,7 +669,7 @@ function importWeldRecords(rows, projectUuid) {
         pipelineId = res.lastInsertRowid;
       }
 
-      // 2. 查找或插入焊口
+      // 2. 查找或插入焊口（跳过：重名焊口不覆盖）
       let weldRow = findWeldStmt.get(pipelineId, weldNo);
       if (weldRow) {
         skipped++;
@@ -660,6 +723,7 @@ module.exports = {
   listPipelines,
   getPipelineByUuid,
   createPipeline,
+  updatePipeline,
   deletePipeline,
   searchPipelines,
 
@@ -668,9 +732,11 @@ module.exports = {
   getWeldByUuid,
   getWeldByPipelineAndWeldNo,
   createWeld,
+  updateWeld,
   deleteWeld,
   updatePhotoPath,
   getStats,
   bulkDelete,
   importWeldRecords,
+  exportProjectData,
 };

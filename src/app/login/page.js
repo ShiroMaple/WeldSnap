@@ -120,7 +120,7 @@ export default function LoginPage() {
         setSuccessMsg(`✅登录成功，${data.user.display_name || data.user.username}`);
 
         setTimeout(() => {
-          if (data.user.role === 'admin') {
+          if (data.user.role === 'admin' || data.user.role === 'project_admin') {
             router.push('/admin');
           } else {
             router.push('/upload');

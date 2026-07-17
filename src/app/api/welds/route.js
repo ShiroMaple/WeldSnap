@@ -27,7 +27,7 @@ async function postHandler(request) {
     return Response.json({ success: false, error: '缺少 pipeline_uuid 参数' }, { status: 400 });
   }
 
-  const createSource = user.role === 'admin' ? '管理控制台创建' : '现场创建';
+  const createSource = (user.role === 'admin' || user.role === 'project_admin') ? '管理控制台创建' : '现场创建';
 
   const result = db.createWeld(pipeline_uuid, weld_no, createSource);
   if (result.success) {

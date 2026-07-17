@@ -222,6 +222,8 @@ export default function WeldMatrix({
               handleBulkDeleteWelds(true);
               return;
             }
+          } else if (currentUser.role === 'project_admin') {
+            alert(`${data.error}\n\n项目管理员无权删除包含照片的记录，请联系系统管理员处理。`);
           } else {
             alert(data.error);
           }
@@ -371,50 +373,19 @@ export default function WeldMatrix({
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-white relative">
       
-      {/* 快捷批量下载、批量删除与控制台新增焊口条 */}
-      <div className="p-4 border-b border-[#e0e0e0] bg-[#f4f4f4] flex flex-wrap justify-between items-center select-none gap-4">
+      {/* 快捷批量下载、批量删除与控制台新增焊口条 (固定高度 h-[76px] 且为两行排版，以实现与左侧完美的对称对齐) */}
+      <div className="h-[76px] px-4 py-2.5 border-b border-[#e0e0e0] bg-[#f4f4f4] flex flex-col justify-between select-none">
         
-        {/* 左侧批量动作 */}
-        <div className="flex items-center gap-3">
-          {records.length > 0 && (
-            <div className="flex items-center gap-2 text-[11px] text-[#525252]">
-              <button onClick={handleSelectAll} className="hover:underline cursor-pointer">全选</button>
-              <span>/</span>
-              <button onClick={handleDeselectAll} className="hover:underline cursor-pointer">清空</button>
-              <span>/</span>
-              <button onClick={handleInvertSelect} className="hover:underline cursor-pointer">反选</button>
-            </div>
-          )}
-          
-          {selectedUuids.length > 0 && (
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleBulkDownloadZip}
-                disabled={!!downloadProgress}
-                className="h-8 px-4 bg-[#0f62fe] hover:bg-[#0353e9] text-white text-[12px] cursor-pointer rounded-none border-none font-medium"
-              >
-                {downloadProgress || `📦 批量下载已选 (${selectedUuids.length})`}
-              </button>
-              <button
-                onClick={() => handleBulkDeleteWelds(false)}
-                disabled={deleting}
-                className="h-8 px-4 bg-[#da1e28] hover:bg-[#b21922] text-white text-[12px] cursor-pointer rounded-none border-none font-medium"
-              >
-                🗑️ 删除已选 ({selectedUuids.length})
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* 右侧控制台新增焊口控制 */}
-        <div className="flex items-center gap-2">
+        {/* 第一行：添加焊口与批量操作按钮 */}
+        <div className="flex justify-between items-center w-full">
+          {/* 1. 添加焊口 */}
           {projectInfo.weld_prefix ? (
             <button
               onClick={handleAddWeld}
               disabled={addingWeld}
-              className="h-8 px-4 border border-[#0f62fe] bg-white hover:bg-[#edf5ff] text-[#0f62fe] text-[12px] font-medium cursor-pointer rounded-none"
+              className="h-8 px-4 bg-[#0f62fe] hover:bg-[#0353e9] text-white text-[12px] font-medium cursor-pointer rounded-none border-none outline-none"
             >
-              {addingWeld ? '添加中...' : `+ 自动生成焊口 (${projectInfo.weld_prefix}-XX)`}
+              {addingWeld ? '添加中...' : `+ 添加焊口`}
             </button>
           ) : (
             <div className="flex items-center gap-2">
@@ -429,12 +400,46 @@ export default function WeldMatrix({
               <button
                 onClick={handleAddWeld}
                 disabled={addingWeld}
-                className="h-8 px-3 bg-[#393939] hover:bg-[#4c4c4c] text-white text-[12px] font-medium cursor-pointer rounded-none border-none"
+                className="h-8 px-3 bg-[#0f62fe] hover:bg-[#0353e9] text-white text-[12px] font-medium cursor-pointer rounded-none border-none"
               >
                 添加
               </button>
             </div>
           )}
+
+          {/* 2. 批量操作按钮 */}
+          <div className="flex items-center gap-2">
+            {selectedUuids.length > 0 && (
+              <>
+                <button
+                  onClick={handleBulkDownloadZip}
+                  disabled={!!downloadProgress}
+                  className="h-8 px-4 bg-[#393939] hover:bg-[#4c4c4c] text-white text-[12px] cursor-pointer rounded-none border-none font-medium"
+                >
+                  {downloadProgress || `📦 批量下载已选 (${selectedUuids.length})`}
+                </button>
+                <button
+                  onClick={() => handleBulkDeleteWelds(false)}
+                  disabled={deleting}
+                  className="h-8 px-4 bg-[#da1e28] hover:bg-[#b21922] text-white text-[12px] cursor-pointer rounded-none border-none font-medium"
+                >
+                  🗑️ 删除已选 ({selectedUuids.length})
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* 第二行：批量选择选项与数量指示 */}
+        <div className="flex justify-between items-center w-full text-[11px] text-[#525252]">
+          <div className="flex gap-2">
+            <button onClick={handleSelectAll} className="hover:underline cursor-pointer">全选</button>
+            <span>/</span>
+            <button onClick={handleDeselectAll} className="hover:underline cursor-pointer">清空</button>
+            <span>/</span>
+            <button onClick={handleInvertSelect} className="hover:underline cursor-pointer">反选</button>
+          </div>
+          <span className="text-[12px] text-[#525252] font-mono">焊口共 {records.length} 个</span>
         </div>
       </div>
 

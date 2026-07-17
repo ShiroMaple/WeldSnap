@@ -26,7 +26,7 @@ function QrCodesPrintContent() {
         // 1. 鉴权：必须是已登录的管理员
         const authResp = await fetch('/api/auth/check');
         const authData = await authResp.json();
-        if (!authData.logged_in || authData.user.role !== 'admin') {
+        if (!authData.logged_in || (authData.user.role !== 'admin' && authData.user.role !== 'project_admin')) {
           router.push('/login');
           return;
         }

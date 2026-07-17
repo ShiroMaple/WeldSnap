@@ -3,17 +3,19 @@
  *
  * GET  /api/admin/users - 获取所有用户列表
  * POST /api/admin/users - 新增用户
+ *
+ * 仅系统管理员 (admin) 可访问。
  */
 
 const { withTrace } = require('../../../../middleware/withTrace');
-const { requireAdmin } = require('../../../../middleware/auth');
+const { requireSystemAdmin } = require('../../../../middleware/auth');
 const db = require('../../../../lib/db');
 
 /**
- * 获取用户列表 (管理员权限)
+ * 获取用户列表 (系统管理员权限)
  */
 async function getHandler(request) {
-  requireAdmin(request);
+  requireSystemAdmin(request);
 
   // 自动销号规则：清理超过 90 天未登录的简易匿名账户 (username 以 anon_ 开头)
   try {
@@ -36,10 +38,10 @@ async function getHandler(request) {
 }
 
 /**
- * 创建新用户 (管理员权限)
+ * 创建新用户 (系统管理员权限)
  */
 async function postHandler(request) {
-  requireAdmin(request);
+  requireSystemAdmin(request);
 
   let body;
   try {
@@ -53,7 +55,7 @@ async function postHandler(request) {
     return Response.json({ success: false, error: '用户名和密码不能为空' }, { status: 400 });
   }
 
-  if (!['admin', 'worker'].includes(role)) {
+  if (!['admin', 'project_admin', 'worker'].includes(role)) {
     return Response.json({ success: false, error: '无效的角色' }, { status: 400 });
   }
 

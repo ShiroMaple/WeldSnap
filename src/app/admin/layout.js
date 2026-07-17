@@ -4,7 +4,7 @@
  * 管理员后台基础布局 (Client Component)
  *
  * 职责：
- *   1. 身份认证守卫：首屏及每次渲染时请求 /api/auth/check。如果未登录或非管理员，拦截跳转回 /login。
+ *   1. 身份认证守卫：首屏及每次渲染时请求 /api/auth/check。如果未登录或非管理员（系统管理员/项目管理员），拦截跳转回 /login。
  *   2. 提供顶层 IBM Carbon 经典的 Masthead 导航（深色背景 #161616，高度 48px）。
  *   3. 全局退出登录状态维护。
  */
@@ -22,7 +22,7 @@ export default function AdminLayout({ children }) {
       try {
         const resp = await fetch('/api/auth/check');
         const data = await resp.json();
-        if (!data.logged_in || data.user.role !== 'admin') {
+        if (!data.logged_in || (data.user.role !== 'admin' && data.user.role !== 'project_admin')) {
           router.push('/login');
         } else {
           setUser(data.user);
@@ -68,7 +68,7 @@ export default function AdminLayout({ children }) {
             <span className="text-[#c6c6c6]">当前用户:</span>
             <span className="text-white font-medium">{user.display_name || user.username}</span>
             <span className="px-2 py-0.5 bg-[#393939] text-[#edf5ff] text-[11px] rounded-none">
-              管理员
+              {user.role === 'admin' ? '系统管理员' : user.role === 'project_admin' ? '项目管理员' : '管理员'}
             </span>
           </div>
           <button

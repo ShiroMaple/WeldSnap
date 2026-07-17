@@ -30,10 +30,10 @@ async function handler(request) {
     return Response.json({ success: false, error: '无效的 type 参数' }, { status: 400 });
   }
 
-  // 校验当前用户是否为系统管理员 (只有 admin 角色是系统管理员)
+  // 校验当前用户是否为系统管理员 (仅 admin 角色可强删含照片记录)
   const isSystemAdmin = user.role === 'admin';
 
-  // 如果没有强制删除标识，我们视 isSystemAdmin 为 false 以触发安全熔断拦截
+  // force=true 但非系统管理员 → 视为 false，触发熔断拦截
   const result = db.bulkDelete(uuids, type, force ? isSystemAdmin : false);
 
   if (result.success) {

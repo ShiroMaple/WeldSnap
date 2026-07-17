@@ -9,8 +9,9 @@
 
 export default function StatsBar({ stats = { total: 0, completed: 0, pending: 0 } }) {
   const { total, completed, pending } = stats;
-  // 防止分母为 0
-  const ratio = total > 0 ? Math.round((completed / total) * 100) : 0;
+  // 每个焊口有 3 道工序 (组对/打底/盖面)
+  const totalProcesses = total * 3;
+  const ratio = totalProcesses > 0 ? Math.round((completed / totalProcesses) * 100) : 0;
 
   return (
     <div className="flex gap-4 mb-6 flex-wrap select-none">
@@ -27,10 +28,23 @@ export default function StatsBar({ stats = { total: 0, completed: 0, pending: 0 
         </div>
       </div>
 
-      {/* 已完成 */}
+      {/* 待录入工序数 */}
       <div className="flex-1 min-w-[200px] bg-[#f4f4f4] border border-[#e0e0e0] p-5 rounded-none flex flex-col justify-between">
         <div>
-          <span className="text-[12px] font-normal tracking-[0.32px] text-[#525252]">已完成</span>
+          <span className="text-[12px] font-normal tracking-[0.32px] text-[#525252]">待录入工序数</span>
+          <div className="text-[28px] font-light text-[#da1e28] mt-2 font-mono">
+            {pending}
+          </div>
+        </div>
+        <div className="w-full h-1 bg-[#e0e0e0] mt-4 rounded-none overflow-hidden">
+          <div className="h-full bg-[#da1e28]" style={{ width: `${totalProcesses > 0 ? Math.round((pending / totalProcesses) * 100) : 0}%` }} />
+        </div>
+      </div>
+
+      {/* 已完成工序数 */}
+      <div className="flex-1 min-w-[200px] bg-[#f4f4f4] border border-[#e0e0e0] p-5 rounded-none flex flex-col justify-between">
+        <div>
+          <span className="text-[12px] font-normal tracking-[0.32px] text-[#525252]">已完成工序数</span>
           <div className="text-[28px] font-light text-[#24a148] mt-2 font-mono">
             {completed}
           </div>
@@ -40,23 +54,10 @@ export default function StatsBar({ stats = { total: 0, completed: 0, pending: 0 
         </div>
       </div>
 
-      {/* 待录入 */}
+      {/* 质量记录完成进度 */}
       <div className="flex-1 min-w-[200px] bg-[#f4f4f4] border border-[#e0e0e0] p-5 rounded-none flex flex-col justify-between">
         <div>
-          <span className="text-[12px] font-normal tracking-[0.32px] text-[#525252]">待录入</span>
-          <div className="text-[28px] font-light text-[#da1e28] mt-2 font-mono">
-            {pending}
-          </div>
-        </div>
-        <div className="w-full h-1 bg-[#e0e0e0] mt-4 rounded-none overflow-hidden">
-          <div className="h-full bg-[#da1e28]" style={{ width: `${total > 0 ? 100 - ratio : 0}%` }} />
-        </div>
-      </div>
-
-      {/* 完工率 */}
-      <div className="flex-1 min-w-[200px] bg-[#f4f4f4] border border-[#e0e0e0] p-5 rounded-none flex flex-col justify-between">
-        <div>
-          <span className="text-[12px] font-normal tracking-[0.32px] text-[#525252]">完工进度</span>
+          <span className="text-[12px] font-normal tracking-[0.32px] text-[#525252]">质量记录完成进度</span>
           <div className="text-[28px] font-light text-[#0f62fe] mt-2 font-mono">
             {ratio}%
           </div>

@@ -26,6 +26,15 @@ const nextConfig = {
         callback();
       });
     }
+
+    // 使用确定性 chunk ID（基于模块路径的短哈希），避免热重载时数字 ID 漂移导致
+    // "Cannot find module './xxx.js'" 错误。这不影响生产构建产物大小。
+    config.optimization = {
+      ...config.optimization,
+      moduleIds: 'deterministic',
+      chunkIds: 'deterministic',
+    };
+
     return config;
   },
 

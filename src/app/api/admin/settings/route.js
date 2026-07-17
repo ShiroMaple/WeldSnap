@@ -1,12 +1,14 @@
 /**
- * 获取及保存系统配置接口 (管理员权限)
+ * 获取及保存系统配置接口 (系统管理员权限)
  *
  * GET  /api/admin/settings - 获取脱敏后的云端 OSS 配置及服务器局域网地址
  * POST /api/admin/settings - 配置保存占位（云原生架构下配置推荐通过环境变量控制）
+ *
+ * 仅系统管理员 (admin) 可访问。
  */
 
 const { withTrace } = require('../../../../middleware/withTrace');
-const { requireAdmin } = require('../../../../middleware/auth');
+const { requireSystemAdmin } = require('../../../../middleware/auth');
 const { getLocalIPs } = require('../../../../lib/ip');
 const { getOSSConfig } = require('../../../../lib/env');
 
@@ -21,7 +23,7 @@ function maskSecret(str) {
 }
 
 async function getHandler(request) {
-  requireAdmin(request);
+  requireSystemAdmin(request);
 
   // 1. 获取本地局域网 IP
   const ips = getLocalIPs();
@@ -54,7 +56,7 @@ async function getHandler(request) {
 }
 
 async function postHandler(request) {
-  requireAdmin(request);
+  requireSystemAdmin(request);
   // 在云原生架构中，敏感凭证及核心系统参数应当完全通过环境变量控制
   // 故此处不对本地进行持久化写回，直接返回 success 兼容旧版 admin.js 调用
   return Response.json({
