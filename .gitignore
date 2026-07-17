@@ -28,6 +28,7 @@ out/
 # 环境变量（含 OSS 凭证，禁止泄露）
 .env.local
 .env.production.local
+.secret
 
 # Pino 日志输出目录
 logs/

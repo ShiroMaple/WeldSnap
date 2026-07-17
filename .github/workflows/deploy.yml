@@ -72,10 +72,10 @@ jobs:
             mkdir -p data
             mkdir -p exports
             
-            # 🚀 优雅重构 PM2：移除原本写死的 /opt/node-v22/ 绝对路径，使用 --env-file 载入环境变量
+            # 🚀 优雅重构 PM2：使用指定的 /opt/node-v22/ 绝对路径，并使用 --env-file 载入环境变量
             pm2 delete WeldSnap || true
             pm2 start server.js \
               --name WeldSnap \
-              --interpreter node \
+              --interpreter /opt/node-v22/bin/node \
               --node-args="--experimental-sqlite --env-file=.env.local"
             pm2 save
