@@ -20,6 +20,8 @@ jobs:
 
       - name: 3. 安装并配置 pnpm
         uses: pnpm/action-setup@v4
+        with:
+          version: 10 
 
       - name: 4. 安装项目依赖
         run: pnpm install --frozen-lockfile
@@ -66,9 +68,9 @@ jobs:
             mkdir -p exports
             
             # 🚀 优雅重构 PM2：移除原本写死的 /opt/node-v22/ 绝对路径，直接使用服务器全局最新的 node v24
-            pm2 delete weld-photo-system || true
+            
             pm2 start server.js \
-              --name weld-photo-system \
+              --name WeldSnap \
               --interpreter node \
               --node-args="--experimental-sqlite"
             pm2 save

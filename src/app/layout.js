@@ -23,9 +23,9 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata = {
-  title: '管道焊口工序照片录入系统',
+  title: '建安管道焊口工序质量记录 WeldSnap',
   description:
-    'WeldSnap — 石化管道焊口工序照片结构化录入与归档系统。支持扫码定位、手机拍照、自动命名归档。',
+    'WeldSnap — 管道焊口工序照片结构化录入与归档系统。支持扫码定位、手机拍照、自动命名归档。',
 };
 
 export default function RootLayout({ children }) {
