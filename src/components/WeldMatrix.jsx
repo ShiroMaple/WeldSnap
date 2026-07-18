@@ -46,10 +46,77 @@ export default function WeldMatrix({
   const [uploadStatus, setUploadStatus] = useState('idle');
   const [uploadError, setUploadError] = useState('');
 
-  // 自动重置选择
+  // ─── 焊口号编辑与排序状态 ──────────────────────────────────
+  const [editingUuid, setEditingUuid] = useState('');
+  const [editingValue, setEditingValue] = useState('');
+  const [editingSaving, setEditingSaving] = useState(false);
+  const [sortDirection, setSortDirection] = useState(null); // null | 'asc' | 'desc'
+
+  // 自动重置选择、编辑与排序
   useEffect(() => {
     setSelectedUuids([]);
+    setSortDirection(null);
+    setEditingUuid('');
+    setEditingValue('');
   }, [records]);
+
+  const handleStartEditWeld = (uuid, currentNo) => {
+    setEditingUuid(uuid);
+    setEditingValue(currentNo);
+  };
+
+  const handleSaveEditWeld = async () => {
+    if (!editingUuid || editingSaving) return;
+    const no = editingValue.trim();
+    if (!no) {
+      alert('焊口号不能为空');
+      return;
+    }
+
+    setEditingSaving(true);
+    try {
+      const resp = await fetch(`/api/admin/records/${editingUuid}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ weld_no: no }),
+      });
+      const data = await resp.json();
+      if (resp.ok && data.success) {
+        setEditingUuid('');
+        setEditingValue('');
+        if (onRefresh) onRefresh();
+      } else {
+        alert(data.error || '编辑失败');
+      }
+    } catch {
+      alert('网络连接错误');
+    } finally {
+      setEditingSaving(false);
+    }
+  };
+
+  const handleCancelEditWeld = () => {
+    setEditingUuid('');
+    setEditingValue('');
+  };
+
+  const toggleSort = () => {
+    setSortDirection((prev) => {
+      if (prev === null) return 'asc';
+      if (prev === 'asc') return 'desc';
+      return null;
+    });
+  };
+
+  // 计算自然排序后的焊口列表 (支持 W-2 排在 W-10 前面)
+  const sortedRecords = sortDirection
+    ? [...records].sort((a, b) => {
+        const valA = a.weld_no || '';
+        const valB = b.weld_no || '';
+        const compareResult = valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
+        return sortDirection === 'asc' ? compareResult : -compareResult;
+      })
+    : records;
 
   const handleMouseEnter = (photoPath, event) => {
     if (!photoPath) return;
@@ -155,7 +222,8 @@ export default function WeldMatrix({
   // ─── 控制台后台新增焊口 ──────────────────────────────────
   const handleAddWeld = async () => {
     if (!pipelineUuid) return;
-    if (!projectInfo.weld_prefix && !newWeldName.trim()) {
+    const inputNo = newWeldName.trim();
+    if (!projectInfo.weld_prefix && !inputNo) {
       alert('请输入焊口号');
       return;
     }
@@ -167,7 +235,7 @@ export default function WeldMatrix({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           pipeline_uuid: pipelineUuid,
-          weld_no: projectInfo.weld_prefix ? '' : newWeldName.trim(),
+          weld_no: inputNo,
         }),
       });
       const data = await resp.json();
@@ -379,33 +447,23 @@ export default function WeldMatrix({
         {/* 第一行：添加焊口与批量操作按钮 */}
         <div className="flex justify-between items-center w-full">
           {/* 1. 添加焊口 */}
-          {projectInfo.weld_prefix ? (
-            <button
-              onClick={handleAddWeld}
-              disabled={addingWeld}
-              className="h-8 px-4 bg-[#0f62fe] hover:bg-[#0353e9] text-white text-[12px] font-medium cursor-pointer rounded-none border-none outline-none"
-            >
-              {addingWeld ? '添加中...' : `+ 添加焊口`}
-            </button>
-          ) : (
             <div className="flex items-center gap-2">
               <input
                 type="text"
                 value={newWeldName}
                 onChange={(e) => setNewWeldName(e.target.value)}
-                placeholder="新增焊口号..."
+                placeholder={projectInfo.weld_prefix ? "自定义焊口号 (选填)..." : "输入新增焊口号..."}
                 disabled={addingWeld}
-                className="h-8 px-3 bg-white border border-[#c6c6c6] text-[12px] outline-none focus:border-[#0f62fe] rounded-none w-36"
+                className="h-8 px-3 bg-white border border-[#c6c6c6] text-[12px] outline-none focus:border-[#0f62fe] rounded-none w-44 placeholder-[#8d8d8d] font-sans"
               />
               <button
                 onClick={handleAddWeld}
                 disabled={addingWeld}
-                className="h-8 px-3 bg-[#0f62fe] hover:bg-[#0353e9] text-white text-[12px] font-medium cursor-pointer rounded-none border-none"
+                className="h-8 px-4 bg-[#0f62fe] hover:bg-[#0353e9] text-white text-[12px] font-medium cursor-pointer rounded-none border-none outline-none"
               >
-                添加
+                {addingWeld ? '添加中...' : `+ 添加焊口`}
               </button>
             </div>
-          )}
 
           {/* 2. 批量操作按钮 */}
           <div className="flex items-center gap-2">
@@ -457,7 +515,18 @@ export default function WeldMatrix({
                   <th className="pb-3 pr-4 font-medium w-10">
                     {/* 复选框占位 */}
                   </th>
-                  <th className="pb-3 px-4 font-medium">焊口号</th>
+                  <th
+                    id="weld-no-header"
+                    onClick={toggleSort}
+                    className="pb-3 px-4 font-medium cursor-pointer hover:bg-[#e8e8e8]/60 transition-colors select-none"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>焊口号</span>
+                      <span className="text-[11px] font-mono text-[#525252]">
+                        {sortDirection === 'asc' ? '▲' : sortDirection === 'desc' ? '▼' : '⇅'}
+                      </span>
+                    </div>
+                  </th>
                   <th className="pb-3 px-4 font-medium">组对工序</th>
                   <th className="pb-3 px-4 font-medium">打底工序</th>
                   <th className="pb-3 px-4 font-medium">盖面工序</th>
@@ -466,7 +535,7 @@ export default function WeldMatrix({
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#e0e0e0] text-[#161616]">
-                {records.map((r) => {
+                {sortedRecords.map((r) => {
                   const isChecked = selectedUuids.includes(r.uuid);
                   const isOnsite = r.create_source === '现场创建';
 
@@ -521,14 +590,44 @@ export default function WeldMatrix({
                         />
                       </td>
                       <td className="py-3.5 px-4 font-mono font-medium flex items-center gap-2">
-                        <span>{r.weld_no}</span>
-                        {isOnsite && (
-                          <span
-                            className="bg-[#f1c21b]/20 text-[#161616] text-[10px] px-1 py-0.2 font-medium border border-[#f1c21b]/30"
-                            title="现场新增账号创建的焊口记录，管理员需核对名称是否符合图纸规范"
-                          >
-                            现场创建
-                          </span>
+                        {editingUuid === r.uuid ? (
+                          <input
+                            type="text"
+                            value={editingValue}
+                            onChange={(e) => setEditingValue(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleSaveEditWeld();
+                              if (e.key === 'Escape') handleCancelEditWeld();
+                            }}
+                            onBlur={handleSaveEditWeld}
+                            disabled={editingSaving}
+                            autoFocus
+                            onClick={(e) => e.stopPropagation()}
+                            className="h-7 px-1 bg-white border border-[#0f62fe] text-[12px] font-mono outline-none rounded-none w-28"
+                          />
+                        ) : (
+                          <>
+                            <span
+                              className={(currentUser.role === 'admin' || currentUser.role === 'project_admin') ? "cursor-text hover:underline" : ""}
+                              title={(currentUser.role === 'admin' || currentUser.role === 'project_admin') ? "双击编辑焊口号" : ""}
+                              onDoubleClick={(e) => {
+                                if (currentUser.role === 'admin' || currentUser.role === 'project_admin') {
+                                  e.stopPropagation();
+                                  handleStartEditWeld(r.uuid, r.weld_no);
+                                }
+                              }}
+                            >
+                              {r.weld_no}
+                            </span>
+                            {isOnsite && (
+                              <span
+                                className="bg-[#f1c21b]/20 text-[#161616] text-[10px] px-1 py-0.2 font-medium border border-[#f1c21b]/30"
+                                title="现场新增账号创建的焊口记录，管理员需核对名称是否符合图纸规范"
+                              >
+                                现场创建
+                              </span>
+                            )}
+                          </>
                         )}
                       </td>
                       <td className="py-3.5 px-4">

@@ -463,8 +463,8 @@ function createWeld(pipelineUuid, weldNo, createSource = '管理控制台创建'
   const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(pipeline.project_id);
   let finalWeldNo = weldNo ? weldNo.trim() : '';
 
-  // 如果设定了焊口号前缀，自动编号（如 W-01）
-  if (project.weld_prefix) {
+  // 如果没有传入自定义焊口号，且设定了焊口号前缀，自动编号（如 W-01）
+  if (!finalWeldNo && project.weld_prefix) {
     const prefix = project.weld_prefix;
     const rows = db.prepare('SELECT weld_no FROM weld_records WHERE pipeline_id = ? AND weld_no LIKE ?').all(pipeline.id, `${prefix}-%`);
     let maxNum = 0;
