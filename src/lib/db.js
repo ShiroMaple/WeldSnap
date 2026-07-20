@@ -100,6 +100,15 @@ function getDbInstance() {
             logger.info({ msg: 'db.admin_created', username: 'admin' });
           }
         }
+
+        // system_settings 表始终尝试创建（新表，已有数据库中可能不存在）
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS system_settings (
+            key             TEXT PRIMARY KEY,
+            value           TEXT NOT NULL
+          );
+        `);
+
         break; // 成功执行，跳出循环
       } catch (err) {
         if (err.message.includes('locked')) {
@@ -721,6 +730,34 @@ function searchPipelines(keyword) {
   `).all('%' + keyword + '%');
 }
 
+// ─── 系统设置 ──────────────────────────────────────────
+
+const DEFAULT_SETTINGS = {
+  compress_enabled: '1',
+  compress_max_width: '1920',
+  compress_max_height: '1080',
+  compress_quality: '0.8',
+};
+
+function getSetting(key) {
+  const row = db.prepare('SELECT value FROM system_settings WHERE key = ?').get(key);
+  if (row) return row.value;
+  return DEFAULT_SETTINGS[key] !== undefined ? DEFAULT_SETTINGS[key] : null;
+}
+
+function getAllSettings() {
+  const rows = db.prepare('SELECT key, value FROM system_settings').all();
+  const map = {};
+  for (const r of rows) map[r.key] = r.value;
+  // 合并默认值（数据库未覆盖的用默认）
+  return { ...DEFAULT_SETTINGS, ...map };
+}
+
+function setSetting(key, value) {
+  db.prepare('INSERT OR REPLACE INTO system_settings (key, value) VALUES (?, ?)').run(key, String(value));
+  logger.info({ msg: 'db.setting_updated', key });
+}
+
 // ─── 导出 ────────────────────────────────────────────────
 module.exports = {
   db,
@@ -759,4 +796,9 @@ module.exports = {
   bulkDelete,
   importWeldRecords,
   exportProjectData,
+
+  // Settings
+  getSetting,
+  getAllSettings,
+  setSetting,
 };

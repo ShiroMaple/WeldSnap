@@ -75,6 +75,9 @@ function UploadContent() {
     gaimian: useRef(null),
   };
 
+  // 压缩参数（从 API 动态读取）
+  const [compressConfig, setCompressConfig] = useState({ enabled: true, maxWidth: 1920, maxHeight: 1080, quality: 0.8 });
+
   // ─── 认证检查与扫码定位 ──────────────────────────────────
   useEffect(() => {
     async function initPage() {
@@ -99,6 +102,14 @@ function UploadContent() {
     }
     initPage();
   }, [router, searchParams]);
+
+  // 拉取压缩参数
+  useEffect(() => {
+    fetch('/api/settings/compression')
+      .then(r => r.json())
+      .then(data => { if (data.success) setCompressConfig(data.compression); })
+      .catch(() => {});
+  }, []);
 
   // ─── 用户退出 ───────────────────────────────────────────
   const handleLogout = async () => {
@@ -266,15 +277,17 @@ function UploadContent() {
 
     // 1. 进入压缩状态
     setIsSubmitting((prev) => ({ ...prev, [type]: true }));
-    setStatusMsg((prev) => ({ ...prev, [type]: '正在压缩照片...' }));
 
-    let compressedBlob;
-    try {
-      compressedBlob = await compressImage(file, 1920, 1080, 0.8);
-    } catch (err) {
-      setStatusMsg((prev) => ({ ...prev, [type]: '压缩失败，请重试' }));
-      setIsSubmitting((prev) => ({ ...prev, [type]: false }));
-      return;
+    let blobToSend = file;
+    if (compressConfig.enabled) {
+      setStatusMsg((prev) => ({ ...prev, [type]: '正在压缩照片...' }));
+      try {
+        blobToSend = await compressImage(file, compressConfig.maxWidth, compressConfig.maxHeight, compressConfig.quality);
+      } catch (err) {
+        setStatusMsg((prev) => ({ ...prev, [type]: '压缩失败，请重试' }));
+        setIsSubmitting((prev) => ({ ...prev, [type]: false }));
+        return;
+      }
     }
 
     // 2. 向后端请求预签名上传凭证
@@ -308,7 +321,7 @@ function UploadContent() {
     try {
       const ossResp = await fetch(signedUrl, {
         method: 'PUT',
-        body: compressedBlob,
+        body: blobToSend,
         headers: {
           'Content-Type': 'image/jpeg',
         },

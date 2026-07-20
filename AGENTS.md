@@ -18,11 +18,11 @@
 
 ## 架构
 
-**双服务共存**（这是最容易搞混的点）：
-- `server.js`（根目录）— V1 Express 遗留服务器，生产环境 PM2 实际运行的是这个
+**当前运行架构**：
+- 根目录 V1 Express 入口已移除；生产环境运行的是 CI 解压后的 Next.js standalone `server.js`
 - `src/app/` — V2 Next.js App Router，新功能的开发入口
 
-新 API 开发应使用 `src/app/api/` 路由，不要往 `server.js` 里加代码。
+新 API 开发一律使用 `src/app/api/` 路由。
 
 ### 关键文件
 
@@ -67,7 +67,7 @@ projects/{project_uuid}/{weld_uuid}_{工序类型}.jpg
 ```
 语义关联完全由 SQLite 外键维系，不依赖 OSS 目录结构。
 
-V1.0 `server.js` 使用本地 `exports/` 目录。当前以 OSS 为准。
+V1.0 使用本地 `exports/` 目录；该实现已移除，当前以 OSS 为准。
 
 ### 简易登录（设备指纹）
 
@@ -121,13 +121,13 @@ IBM Carbon Design System via Tailwind CSS v4，硬约束在 `src/app/globals.css
 
 - **Windows**：`next.config.mjs` 中 `output: 'standalone'` 在 Windows 下禁用（符号链接 EPERM）。仅 Linux 部署路径使用 standalone 输出。
 - **Node 版本**：生产环境需要 Node.js v22+（`node:sqlite` 依赖）。部署脚本锁定 `/opt/node-v22/bin/node`。
-- **部署**：GitHub Actions self-hosted runner，`pnpm build` 生成 standalone 产物后 rsync 到 `/var/www/WeldSnap/`，PM2 运行 `.next/standalone/server.js`。部署排除 `data/`、`exports/`、`node_modules/`、`config.json`、`.next/cache`。
+- **部署**：GitHub Actions 使用 `ubuntu-latest` 构建 Linux standalone 产物，手动复制 `public/` 与 `.next/static/` 后通过 SCP/SSH 发布到 `/var/www/WeldSnap/`。解压后的 `server.js` 是 Next.js standalone 入口；`data/`、`.env.local` 和日志目录必须持久化。
 - **开发端口**：`pnpm dev` 使用 `-H 0.0.0.0` 绑定所有网卡，局域网设备可通过 `http://<电脑IP>:3000` 访问。
 
 ## 开发约定
 
 - 所有 DB 查询使用 `DatabaseSync` 同步 API（非 async `Database`）
-- 文件上传限制：30MB（server.js 用 multer，Next.js API 需检查限制）
+- 文件上传限制：30MB；V2 使用浏览器直传 OSS，Next.js API 负责签名和确认
 - Session Cookie：`weld_session`，HttpOnly，SameSite=Lax，12h TTL
 - 照片类型键：`zudui` / `dadi` / `gaimian`（中文：组对 / 打底 / 盖面）
 - API 路由返回格式：`{ success: boolean, error?: string, ...data }`

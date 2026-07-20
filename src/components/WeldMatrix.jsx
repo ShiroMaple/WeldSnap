@@ -18,6 +18,7 @@ import { saveAs } from 'file-saver';
 export default function WeldMatrix({
   records = [],
   onRefresh = () => { },
+  onBusyChange = () => { },
   currentUser = {},
   pipelineUuid = '',
   projectInfo = { pipeline_prefix: '', weld_prefix: '', construction_no: '', project_name: '' },
@@ -46,6 +47,9 @@ export default function WeldMatrix({
   const [uploadStatus, setUploadStatus] = useState('idle');
   const [uploadError, setUploadError] = useState('');
 
+  // ─── 压缩参数（从 API 动态读取） ─────────────────────────
+  const [compressConfig, setCompressConfig] = useState({ enabled: true, maxWidth: 1920, maxHeight: 1080, quality: 0.8 });
+
   // ─── 焊口号编辑与排序状态 ──────────────────────────────────
   const [editingUuid, setEditingUuid] = useState('');
   const [editingValue, setEditingValue] = useState('');
@@ -62,9 +66,18 @@ export default function WeldMatrix({
     setEditingValue('');
   }, [records]);
 
+  // 拉取压缩参数
+  useEffect(() => {
+    fetch('/api/settings/compression')
+      .then(r => r.json())
+      .then(data => { if (data.success) setCompressConfig(data.compression); })
+      .catch(() => {});
+  }, []);
+
   const handleStartEditWeld = (uuid, currentNo) => {
     setEditingUuid(uuid);
     setEditingValue(currentNo);
+    onBusyChange(true);
   };
 
   const handleSaveEditWeld = async () => {
@@ -86,6 +99,7 @@ export default function WeldMatrix({
       if (resp.ok && data.success) {
         setEditingUuid('');
         setEditingValue('');
+        onBusyChange(false);
         if (onRefresh) onRefresh();
       } else {
         alert(data.error || '编辑失败');
@@ -100,6 +114,7 @@ export default function WeldMatrix({
   const handleCancelEditWeld = () => {
     setEditingUuid('');
     setEditingValue('');
+    onBusyChange(false);
   };
 
   const toggleSort = (key) => {
@@ -160,10 +175,12 @@ export default function WeldMatrix({
     setViewPhotoPath(path);
     setViewPhotoInfo({ pipelineNo, weldNo, typeLabel, typeKey });
     setHoveredPhoto(null);
+    onBusyChange(true);
   };
 
   const handleClosePhotoModal = () => {
     setViewPhotoPath(null);
+    onBusyChange(false);
   };
 
   // 标记为不合格
@@ -189,6 +206,7 @@ export default function WeldMatrix({
       const data = await resp.json();
       if (resp.ok && data.success) {
         setViewPhotoPath(null);
+        onBusyChange(false);
         if (onRefresh) onRefresh();
       } else {
         alert(data.error || '操作失败');
@@ -393,12 +411,16 @@ export default function WeldMatrix({
     const file = e.target.files[0];
     if (!file || !uploadTarget) return;
 
+    onBusyChange(true);
     const { type, uuid } = uploadTarget;
     setUploadError('');
     setUploadStatus('compressing');
 
     try {
-      const compressedBlob = await compressImage(file, 1920, 1080, 0.8);
+      let blobToSend = file;
+      if (compressConfig.enabled) {
+        blobToSend = await compressImage(file, compressConfig.maxWidth, compressConfig.maxHeight, compressConfig.quality);
+      }
 
       setUploadStatus('signing');
       const signResp = await fetch('/api/upload/sign', {
@@ -419,7 +441,7 @@ export default function WeldMatrix({
       setUploadStatus('uploading');
       const ossResp = await fetch(signedUrl, {
         method: 'PUT',
-        body: compressedBlob,
+        body: blobToSend,
         headers: {
           'Content-Type': 'image/jpeg',
         },
@@ -444,6 +466,7 @@ export default function WeldMatrix({
       }
 
       setUploadStatus('success');
+      onBusyChange(false);
       setTimeout(() => {
         setUploadStatus('idle');
         setUploadTarget(null);
@@ -453,6 +476,7 @@ export default function WeldMatrix({
     } catch (err) {
       setUploadStatus('error');
       setUploadError(err.message || '上传异常');
+      onBusyChange(false);
     } finally {
       e.target.value = '';
     }
@@ -759,6 +783,7 @@ export default function WeldMatrix({
                 <button
                   onClick={() => {
                     setViewPhotoPath(null);
+                    onBusyChange(false);
                     const targetWeld = records.find(r => r.weld_no === viewPhotoInfo.weldNo);
                     if (targetWeld) {
                       handleUploadClick(viewPhotoInfo.pipelineNo, viewPhotoInfo.weldNo, viewPhotoInfo.typeKey, targetWeld.uuid);

@@ -20,6 +20,7 @@ export default function PipelineTree({
   onImportClick = () => { },
   onShowQR = () => { },
   onRefresh = () => { },
+  onBusyChange = () => { },
   currentUser = {},
 }) {
   const [filterQuery, setFilterQuery] = useState('');
@@ -161,6 +162,7 @@ export default function PipelineTree({
   const handleStartEditPipeline = (uuid, currentNo) => {
     setEditingUuid(uuid);
     setEditingValue(currentNo);
+    onBusyChange(true);
   };
 
   const handleSaveEditPipeline = async () => {
@@ -182,6 +184,7 @@ export default function PipelineTree({
       if (resp.ok && data.success) {
         setEditingUuid('');
         setEditingValue('');
+        onBusyChange(false);
         if (onRefresh) onRefresh();
       } else {
         alert(data.error || '编辑失败');
@@ -196,6 +199,7 @@ export default function PipelineTree({
   const handleCancelEditPipeline = () => {
     setEditingUuid('');
     setEditingValue('');
+    onBusyChange(false);
   };
 
   // 6. 打印链接生成

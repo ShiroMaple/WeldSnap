@@ -1,108 +1,98 @@
-# 管道焊口工序照片录入系统
+# WeldSnap
 
-## 简介
+石化管道焊口工序照片结构化录入与归档系统。现场人员通过扫码定位管线，拍摄组对、打底、盖面 3 道工序照片；系统将照片直传阿里云 OSS，并在 SQLite 中记录焊口与照片状态。
 
-石化大修现场使用的焊口工序照片拍照存档系统。支持扫码定位管线号、选择焊口号、手机实时拍摄3道工序照片（组对/打底/盖面），自动命名并按层级导出到本地文件夹。
+## 当前架构
 
-## 快速开始
+项目当前唯一运行实现是 Next.js V2：
 
-### 1. 启动服务
+- 前端与 API：`src/app/`，采用 Next.js App Router。
+- 数据库：`src/lib/db.js`，使用 Node.js 内置 `node:sqlite` 的 `DatabaseSync` API。
+- 会话：`src/lib/session.js`，使用 AES-256-GCM Cookie，会话 Cookie 名为 `weld_session`。
+- 图片存储：浏览器获取 OSS 预签名 URL 后直接上传，服务器不转发图片流。
+- 管理端：`/admin`，支持项目、管线、焊口、二维码、用户、驳回重传和批量导出。
+- 施工端：`/upload`，支持设备指纹简易登录、扫码定位和移动端拍照。
 
-双击 `start.bat`，或在命令行中执行：
+根目录的 Express `server.js`、`db.js` 和旧 `public` 页面已从当前项目中移除。`docs/` 下的旧架构文档仅作为 V1 历史资料保留。
 
+## 环境要求
+
+- Node.js 22 或更高版本。
+- pnpm。
+- 阿里云 OSS Bucket，且配置允许浏览器跨域 `PUT` 上传。
+
+所有 `node:sqlite` 调用都必须通过项目脚本运行，不能直接执行裸 `node`、`next dev` 或 `next build`。
+
+## 本地开发
+
+```bash
+pnpm install
+pnpm dev
 ```
+
+开发服务器绑定 `0.0.0.0:3000`，同一局域网内的手机可以访问 `http://<电脑 IP>:3000`。
+
+Windows 下 `next.config.mjs` 会关闭 standalone 输出，因此本地主要使用 `pnpm dev`。Linux CI 负责生成生产 standalone 产物。
+
+## 环境配置
+
+复制 `.env.example` 为 `.env.local`，填写：
+
+```dotenv
+OSS_ACCESS_KEY_ID=...
+OSS_ACCESS_KEY_SECRET=...
+OSS_BUCKET=weldsnap-photos
+OSS_REGION=oss-cn-shanghai
+OSS_ENDPOINT=https://oss-cn-shanghai.aliyuncs.com
+SESSION_SECRET=<change-this>
+```
+
+`OSS_*` 变量缺失时，OSS 相关功能会拒绝启动。生产环境必须使用独立的强随机 `SESSION_SECRET`。
+
+## 生产构建与启动
+
+```bash
+pnpm build
 pnpm start
 ```
 
-启动后会显示：
-```
-========================================
-  管道焊口工序照片录入系统 已启动
-========================================
-  本机访问:  http://localhost:3000
-  局域网:    http://192.168.x.x:3000
-----------------------------------------
-  默认管理员: admin / admin123
-========================================
-```
+Linux CI 会生成 `.next/standalone`，并手动复制 `public/` 与 `.next/static/` 后打包部署。解压到服务器后的 `server.js` 是 Next.js 生成的 standalone 服务入口，不是历史 V1 Express 入口。
 
-### 2. 登录管理后台
+生产部署由 [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) 完成，使用 Node.js 22、SCP/SSH 和 PM2。服务器上的 `data/`、`.env.local` 和日志目录必须独立持久化，不能被发布包覆盖。
 
-在电脑浏览器打开 `http://localhost:3000`，使用默认账号 `admin / admin123` 登录。
+## 数据模型
 
-### 3. 导入Excel数据
-
-在「数据导入」页面上传Excel文件（.xlsx），需包含以下列：
-- 序号
-- 项目名称
-- 施工号
-- 项目号
-- 管线号
-- 焊口号
-
-（列名支持模糊匹配，不要求完全一致）
-
-### 4. 设置导出目录
-
-在「系统设置」页面，点击「选择目录」选择照片导出的根目录。
-如不设置，默认导出到程序目录下的 `exports/` 文件夹。
-
-### 5. 生成并张贴二维码
-
-在「二维码管理」页面，查看所有管线号的二维码。
-点击「打开打印页」可批量打印二维码，现场张贴到对应管线上。
-
-### 6. 施工人员录入照片
-
-**方式一：扫码录入**
-- 施工人员用手机扫描管线上的二维码
-- 浏览器自动打开上传页面，管线号已自动填入
-- 下拉选择焊口号
-- 依次拍摄3张工序照片（组对、打底、盖面）
-- 提交完成
-
-**方式二：手动搜索**
-- 手机或电脑打开系统网址
-- 登录施工人员账号
-- 在搜索框输入管线号，选择匹配结果
-- 后续步骤同上
-
-## 照片命名与导出结构
-
-照片自动命名格式：`{管线号}-{焊口号}-{工序}.jpg`
-
-导出文件夹结构：
-```
-{导出根目录}/
-├── {项目名称}_{施工号}_{项目号}/
-│   ├── {管线号}/
-│   │   ├── {焊口号}/
-│   │   │   ├── {管线号}-{焊口号}-组对.jpg
-│   │   │   ├── {管线号}-{焊口号}-打底.jpg
-│   │   │   └── {管线号}-{焊口号}-盖面.jpg
-│   │   └── ...
-│   └── ...
-└── ...
+```text
+projects
+  └── pipelines
+        └── weld_records
 ```
 
-## 用户角色
+- 一个项目的 `construction_no` 全局唯一。
+- 管线在项目内唯一。
+- 焊口在管线内唯一。
+- 照片字段保存 OSS Object Key，而不是本地路径。
+- Object Key 格式为 `projects/{project_uuid}/{weld_uuid}_{工序}.jpg`。
+- 被驳回的照片使用 `REJECTED:` 前缀保留历史关联。
 
-| 角色 | 权限 |
-|------|------|
-| 管理员 | 导入数据、生成二维码、管理用户、覆盖照片、浏览导出文件、系统设置 |
-| 施工人员 | 扫码/搜索管线号 → 选择焊口 → 拍照上传 |
+## 常用命令
 
-## 使用注意事项
+| 用途 | 命令 |
+| --- | --- |
+| 开发服务器 | `pnpm dev` |
+| 生产构建 | `pnpm build` |
+| 生产启动 | `pnpm start` |
+| Lint | `pnpm lint` |
 
-1. **网络要求**：手机和运行服务的电脑需连接同一WiFi网络
-2. **拍照**：手机端点击拍照按钮会直接调起相机，拍摄后自动上传
-3. **覆盖照片**：管理员可以重新上传覆盖已有照片；施工人员只能上传尚未完成的
-4. **密码修改**：首次使用后请尽快修改默认管理员密码
-5. **数据重置**：如需清空所有数据，停止服务后删除 `data/app.db` 文件，重新启动即可
+项目当前未配置自动化测试框架，端到端验证请参考 `docs/E2E-Test-Plan.md`，并以当前代码和 CI 配置为准。
 
-## 技术说明
+## 历史资料
 
-- 后端：Node.js + Express + SQLite（内置 node:sqlite 模块）
-- 前端：原生 HTML/CSS/JavaScript，响应式设计，适配手机和桌面
-- 照片存储：直接保存到本地磁盘，无云端依赖
-- 端口：默认 3000，可在 config.json 中修改
+以下文档描述的是 V1 或迁移过程中的中间状态，不是当前部署规范：
+
+- `docs/TakeOver.md`
+- `docs/Implementation Setup.md`
+- `docs/Roadmap.md`
+- `docs/devLogs/`
+
+如历史资料与 `src/`、`package.json` 或 `.github/workflows/deploy.yml` 不一致，以代码和 CI 配置为准。

@@ -10,6 +10,7 @@ export const dynamic = 'force-dynamic';
 
 const { withTrace } = require('../../../../middleware/withTrace');
 const { requireSystemAdmin } = require('../../../../middleware/auth');
+const db = require('../../../../lib/db');
 const { getLocalIPs } = require('../../../../lib/ip');
 const { getOSSConfig } = require('../../../../lib/env');
 
@@ -45,11 +46,20 @@ async function getHandler(request) {
     ossMeta = { error: '未注入 OSS 环境变量' };
   }
 
+  // 3. 获取照片压缩参数
+  const compression = db.getAllSettings();
+
   return Response.json({
     success: true,
     config: {
       oss: ossMeta,
       exportMode: 'OSS_DIRECT',
+      compression: {
+        enabled: compression.compress_enabled === '1',
+        maxWidth: parseInt(compression.compress_max_width, 10),
+        maxHeight: parseInt(compression.compress_max_height, 10),
+        quality: parseFloat(compression.compress_quality),
+      },
     },
     serverIPs: ips,
     port: parseInt(port, 10),
@@ -58,12 +68,31 @@ async function getHandler(request) {
 
 async function postHandler(request) {
   requireSystemAdmin(request);
-  // 在云原生架构中，敏感凭证及核心系统参数应当完全通过环境变量控制
-  // 故此处不对本地进行持久化写回，直接返回 success 兼容旧版 admin.js 调用
-  return Response.json({
-    success: true,
-    msg: '云原生架构下，配置已通过系统环境变量持久锁定。',
-  });
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return Response.json({ success: false, error: '请求体必须是 JSON' }, { status: 400 });
+  }
+
+  const { compression } = body;
+  if (compression) {
+    if (compression.enabled !== undefined) {
+      db.setSetting('compress_enabled', compression.enabled ? '1' : '0');
+    }
+    if (compression.maxWidth !== undefined) {
+      db.setSetting('compress_max_width', String(compression.maxWidth));
+    }
+    if (compression.maxHeight !== undefined) {
+      db.setSetting('compress_max_height', String(compression.maxHeight));
+    }
+    if (compression.quality !== undefined) {
+      db.setSetting('compress_quality', String(compression.quality));
+    }
+  }
+
+  return Response.json({ success: true });
 }
 
 export const GET = withTrace(getHandler);

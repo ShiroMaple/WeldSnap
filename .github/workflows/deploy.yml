@@ -7,7 +7,7 @@ on:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest # 采用 GitHub 官方云端托管虚拟机
+    runs-on: ubuntu-latest # GitHub 托管 Linux 构建机
 
     steps:
       - name: 1. 拉取最新代码
@@ -16,7 +16,7 @@ jobs:
       - name: 2. 初始化 Node.js 环境 (对齐服务器 v22 版本)
         uses: actions/setup-node@v6
         with:
-          node-version: '22' # 🚀 让云端打包环境使用 v24，与服务器完全对齐！
+          node-version: '22' # 与生产服务器保持一致
 
       - name: 3. 安装并配置 pnpm
         uses: pnpm/action-setup@v6
@@ -72,9 +72,9 @@ jobs:
             mkdir -p data
             mkdir -p exports
             
-            # 🚀 优雅重构 PM2：使用指定的 /opt/node-v22/ 绝对路径，并使用 --env-file 载入环境变量
+            # 解压后的 server.js 是 Next.js standalone 产物，不是历史 V1 Express 入口；使用服务器持久化的环境文件。
             pm2 delete WeldSnap || true
-            pm2 start server.js \
+            pm2 start ./server.js \
               --name WeldSnap \
               --interpreter /opt/node-v22/bin/node \
               --node-args="--experimental-sqlite --env-file=.env.local"

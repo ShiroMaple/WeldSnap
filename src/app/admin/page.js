@@ -61,8 +61,14 @@ export default function AdminPage() {
   const [filterStatus, setFilterStatus] = useState('');
 
   // 成员与设置数据
-  const [users, setUsers] = useState([]);
   const [settings, setSettings] = useState(null);
+
+  // ─── 照片压缩参数状态 ───────────────────────────────────
+  const [compressEnabled, setCompressEnabled] = useState(true);
+  const [compressMaxWidth, setCompressMaxWidth] = useState(1920);
+  const [compressMaxHeight, setCompressMaxHeight] = useState(1080);
+  const [compressQuality, setCompressQuality] = useState(0.8);
+  const [savingCompression, setSavingCompression] = useState(false);
 
   // ─── 弹窗 Modals 状态 ───────────────────────────────────
   // 1. Excel 导入弹窗
@@ -173,8 +179,45 @@ export default function AdminPage() {
     try {
       const resp = await fetch('/api/admin/settings');
       const data = await resp.json();
-      if (resp.ok && data.success) setSettings(data);
+      if (resp.ok && data.success) {
+        setSettings(data);
+        if (data.config && data.config.compression) {
+          setCompressEnabled(data.config.compression.enabled);
+          setCompressMaxWidth(data.config.compression.maxWidth);
+          setCompressMaxHeight(data.config.compression.maxHeight);
+          setCompressQuality(data.config.compression.quality);
+        }
+      }
     } catch { }
+  };
+
+  const handleSaveCompression = async () => {
+    setSavingCompression(true);
+    try {
+      const resp = await fetch('/api/admin/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          compression: {
+            enabled: compressEnabled,
+            maxWidth: compressMaxWidth,
+            maxHeight: compressMaxHeight,
+            quality: compressQuality,
+          },
+        }),
+      });
+      const data = await resp.json();
+      if (resp.ok && data.success) {
+        alert('压缩参数保存成功！');
+        fetchSettings();
+      } else {
+        alert(data.error || '保存失败');
+      }
+    } catch {
+      alert('网络连接错误');
+    } finally {
+      setSavingCompression(false);
+    }
   };
 
   // ─── 联动拉取 ──────────────────────────────────────────
@@ -879,47 +922,147 @@ export default function AdminPage() {
 
         {/* Panel: 系统设置 */}
         {activeTab === 'settings' && settings && (
-          <div className="p-6 max-w-4xl select-none">
-            <div className="border border-[#e0e0e0] p-6 bg-white rounded-none">
-              <h2 className="text-[20px] font-light text-[#161616] mb-6">系统配置概览</h2>
+          <div className="p-6 max-w-6xl w-full select-none">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+              {/* Left Column: 系统配置概览 */}
+              <div className="border border-[#e0e0e0] p-6 bg-white rounded-none">
+                <h2 className="text-[20px] font-light text-[#161616] mb-6">系统配置概览</h2>
 
-              <div className="space-y-6">
-                <div className="border-b border-[#e0e0e0] pb-4">
-                  <span className="text-[12px] text-[#525252] block mb-1">后端文件管理模式</span>
-                  <span className="text-[14px] font-mono font-semibold text-[#0f62fe] bg-[#edf5ff] px-2.5 py-1 inline-block">
-                    {settings.config.exportMode} (云端对象存储桶直传)
-                  </span>
-                  <p className="text-[12px] text-[#8d8d8d] mt-2">
-                    照片数据由前端直接直传至 OSS 归档存储桶，完全跳过 Next.js 服务器中转，极速且免去服务器流量开销。
-                  </p>
-                </div>
-
-                <div className="border-b border-[#e0e0e0] pb-4">
-                  <span className="text-[12px] text-[#525252] block mb-1">云端 OSS 桶详情 (已脱敏)</span>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2 font-mono text-[13px] bg-[#f4f4f4] p-4 border border-[#e0e0e0]">
-                    <div><span className="text-[#525252]">Bucket:</span> {settings.config.oss.bucket || '-'}</div>
-                    <div><span className="text-[#525252]">Region:</span> {settings.config.oss.region || '-'}</div>
-                    <div className="md:col-span-2 truncate" title={settings.config.oss.endpoint}>
-                      <span className="text-[#525252]">Endpoint:</span> {settings.config.oss.endpoint || '-'}
-                    </div>
-                    <div className="md:col-span-2">
-                      <span className="text-[#525252]">AccessKeyId:</span> {settings.config.oss.accessKeyId || '-'}
-                    </div>
+                <div className="space-y-6">
+                  <div className="border-b border-[#e0e0e0] pb-4">
+                    <span className="text-[12px] text-[#525252] block mb-1">后端文件管理模式</span>
+                    <span className="text-[14px] font-mono font-semibold text-[#0f62fe] bg-[#edf5ff] px-2.5 py-1 inline-block">
+                      {settings.config.exportMode} (云端对象存储桶直传)
+                    </span>
+                    <p className="text-[12px] text-[#8d8d8d] mt-2">
+                      照片数据由前端直接直传至 OSS 归档存储桶，完全跳过 Next.js 服务器中转，极速且免去服务器流量开销。
+                    </p>
                   </div>
-                </div>
 
-                <div>
-                  <span className="text-[12px] text-[#525252] block mb-1.5">当前局域网服务访问地址</span>
-                  <div className="space-y-1">
-                    {settings.serverIPs.map((ip) => (
-                      <div key={ip} className="font-mono text-[14px] text-[#161616]">
-                        • <a href={`http://${ip}:${settings.port}`} target="_blank" className="text-[#0f62fe] hover:underline font-semibold">http://{ip}:{settings.port}</a>
+                  <div className="border-b border-[#e0e0e0] pb-4">
+                    <span className="text-[12px] text-[#525252] block mb-1">云端 OSS 桶详情 (已脱敏)</span>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2 font-mono text-[13px] bg-[#f4f4f4] p-4 border border-[#e0e0e0]">
+                      <div><span className="text-[#525252]">Bucket:</span> {settings.config.oss.bucket || '-'}</div>
+                      <div><span className="text-[#525252]">Region:</span> {settings.config.oss.region || '-'}</div>
+                      <div className="md:col-span-2 truncate" title={settings.config.oss.endpoint}>
+                        <span className="text-[#525252]">Endpoint:</span> {settings.config.oss.endpoint || '-'}
                       </div>
-                    ))}
+                      <div className="md:col-span-2">
+                        <span className="text-[#525252]">AccessKeyId:</span> {settings.config.oss.accessKeyId || '-'}
+                      </div>
+                    </div>
                   </div>
-                  <p className="text-[12px] text-[#8d8d8d] mt-2">
-                    请确保移动设备与宿主机连接到相同的 WiFi 局域网络环境，扫码定位功能方可正常交互。
-                  </p>
+
+                  <div>
+                    <span className="text-[12px] text-[#525252] block mb-1.5">当前局域网服务访问地址</span>
+                    <div className="space-y-1">
+                      {settings.serverIPs.map((ip) => (
+                        <div key={ip} className="font-mono text-[14px] text-[#161616]">
+                          • <a href={`http://${ip}:${settings.port}`} target="_blank" className="text-[#0f62fe] hover:underline font-semibold">http://{ip}:{settings.port}</a>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-[12px] text-[#8d8d8d] mt-2">
+                      请确保移动设备与宿主机连接到相同的 WiFi 局域网络环境，扫码定位功能方可正常交互。
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Column: 照片压缩参数配置 */}
+              <div className="border border-[#e0e0e0] p-6 bg-white rounded-none">
+                <h2 className="text-[20px] font-light text-[#161616] mb-1">照片上传压缩参数</h2>
+                <p className="text-[12px] text-[#525252] mb-6">
+                  控制前端上传照片时的压缩行为。参数修改后对所有新上传立即生效。
+                </p>
+
+                <div className="space-y-5">
+                  {/* 启停开关 */}
+                  <div className="flex items-center gap-3">
+                    <label className="text-[13px] text-[#161616] font-medium w-24">启用压缩</label>
+                    <button
+                      type="button"
+                      onClick={() => setCompressEnabled(!compressEnabled)}
+                      className={`relative w-12 h-6 cursor-pointer transition-colors duration-200 border-none p-0 shrink-0 rounded-none ${
+                        compressEnabled ? 'bg-[#0f62fe]' : 'bg-[#8d8d8d]'
+                      }`}
+                    >
+                      <span
+                        className={`absolute top-[2px] left-0 w-5 h-5 bg-white transition-transform duration-200 ${
+                          compressEnabled ? 'translate-x-[26px]' : 'translate-x-[2px]'
+                        }`}
+                      />
+                    </button>
+                    <span className="text-[12px] text-[#525252]">
+                      {compressEnabled ? '开启：拍照后自动压缩再上传' : '关闭：直接上传原始照片（文件较大）'}
+                    </span>
+                  </div>
+
+                  {/* 分辨率预设 */}
+                  <div className="flex items-center gap-3">
+                    <label className="text-[13px] text-[#161616] font-medium w-24">分辨率上限</label>
+                    <select
+                      value={`${compressMaxWidth}x${compressMaxHeight}`}
+                      onChange={(e) => {
+                        const [w, h] = e.target.value.split('x').map(Number);
+                        setCompressMaxWidth(w);
+                        setCompressMaxHeight(h);
+                      }}
+                      disabled={!compressEnabled}
+                      className="h-9 px-3 bg-white border border-[#c6c6c6] text-[13px] outline-none focus:border-[#0f62fe] rounded-none cursor-pointer disabled:opacity-40"
+                    >
+                      <option value="1280x720">1280 × 720  (720P)</option>
+                      <option value="1920x1080">1920 × 1080 (1080P)</option>
+                      <option value="2560x1440">2560 × 1440 (2K)</option>
+                      <option value="3840x2160">3840 × 2160 (4K)</option>
+                    </select>
+                    <span className="text-[12px] text-[#525252]">等比缩放，小图不放大</span>
+                  </div>
+
+                  {/* JPEG 质量 */}
+                  <div className="flex items-center gap-3">
+                    <label className="text-[13px] text-[#161616] font-medium w-24">JPEG 质量</label>
+                    <input
+                      type="range"
+                      min="0.1"
+                      max="1"
+                      step="0.05"
+                      value={compressQuality}
+                      onChange={(e) => setCompressQuality(parseFloat(e.target.value))}
+                      disabled={!compressEnabled}
+                      className="w-48 accent-[#0f62fe] disabled:opacity-40"
+                    />
+                    <span className="text-[14px] font-mono font-medium text-[#161616] w-12">
+                      {Math.round(compressQuality * 100)}%
+                    </span>
+                  </div>
+
+                  {/* 预估大小 */}
+                  <div className="bg-[#f4f4f4] border border-[#e0e0e0] p-4 text-[12px] text-[#525252]">
+                    <span className="font-medium text-[#161616]">预估效果：</span>
+                    {compressEnabled ? (
+                      <>
+                        手机照片（约 5–10MB）压缩后约{' '}
+                        <span className="font-mono font-medium text-[#0f62fe]">
+                          {Math.round(compressMaxWidth * compressMaxHeight * compressQuality * 3 / 8 / 1024 * 0.15)}–{Math.round(compressMaxWidth * compressMaxHeight * compressQuality * 3 / 8 / 1024 * 0.35)}KB
+                        </span>
+                        ，分辨率 {compressMaxWidth}×{compressMaxHeight}，质量 {Math.round(compressQuality * 100)}%
+                      </>
+                    ) : (
+                      <>原始照片直接上传，不做任何压缩处理。局域网弱网环境下上传较慢。</>
+                    )}
+                  </div>
+
+                  {/* 保存按钮 */}
+                  <div className="pt-2">
+                    <button
+                      onClick={handleSaveCompression}
+                      disabled={savingCompression}
+                      className="h-9 px-6 bg-[#0f62fe] hover:bg-[#0353e9] text-white text-[13px] cursor-pointer rounded-none border-none font-medium disabled:opacity-50"
+                    >
+                      {savingCompression ? '保存中...' : '保存压缩参数'}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
