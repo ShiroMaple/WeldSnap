@@ -32,7 +32,7 @@ out/
 .secret
 
 # Pino 日志输出目录
-logs/
+/logs/
 
 # 系统与编辑器缓存
 .DS_Store
