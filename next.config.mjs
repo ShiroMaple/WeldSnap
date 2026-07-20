@@ -23,7 +23,7 @@ const nextConfig = {
   },
 
   // 显式排除 node:sqlite 等原生 Node.js 模块，防止 Webpack 尝试打包
-  webpack: (config, { isServer }) => {
+  webpack: (config, { isServer, dev }) => {
     if (isServer) {
       config.externals = config.externals || [];
       // 拦截所有 node: 协议的内置模块引用
@@ -35,13 +35,15 @@ const nextConfig = {
       });
     }
 
-    // 使用确定性 chunk ID（基于模块路径的短哈希），避免热重载时数字 ID 漂移导致
-    // "Cannot find module './xxx.js'" 错误。这不影响生产构建产物大小。
-    config.optimization = {
-      ...config.optimization,
-      moduleIds: 'deterministic',
-      chunkIds: 'deterministic',
-    };
+    // 仅在生产构建时使用确定性 chunk ID；开发模式 (pnpm dev) 必须使用 Next.js 默认的 named HMR Chunk IDs，
+    // 彻底解决本地保存代码触发热重载时 Chunk ID 漂移导致 "Cannot find module './undefined.js'" 的问题。
+    if (!dev) {
+      config.optimization = {
+        ...config.optimization,
+        moduleIds: 'deterministic',
+        chunkIds: 'deterministic',
+      };
+    }
 
     return config;
   },
