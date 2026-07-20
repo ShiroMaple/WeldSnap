@@ -1,4 +1,3 @@
-# V1 历史诊断脚本：仅供迁移追溯，不能作为当前部署命令。`r`nimport paramiko
 import time
 import sys
 import io

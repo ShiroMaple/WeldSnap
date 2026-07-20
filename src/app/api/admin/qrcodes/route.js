@@ -32,15 +32,23 @@ async function handler(request) {
     return Response.json({ success: false, error: '缺少 project_uuid 或 uuids 参数' }, { status: 400 });
   }
 
-  // 获取局域网 IP 与端口
+  // 获取局域网 IP 与端口及系统配置公网地址
   const ips = getLocalIPs();
   const ip = ips[0] || 'localhost';
   const port = process.env.PORT || 3000;
 
+  let baseUrl = db.getSetting('server_public_url');
+  if (baseUrl) {
+    baseUrl = baseUrl.replace(/\/+$/, '');
+  }
+  if (!baseUrl) {
+    baseUrl = `http://${ip}:${port}`;
+  }
+
   const items = [];
   try {
     for (const p of pipelines) {
-      const url = `http://${ip}:${port}/upload?pipeline_uuid=${p.uuid}`;
+      const url = `${baseUrl}/upload?pipeline_uuid=${p.uuid}`;
       const qr = await QRCode.toDataURL(url, { width: 250, margin: 1 });
       items.push({
         pipeline_no: p.pipeline_no,

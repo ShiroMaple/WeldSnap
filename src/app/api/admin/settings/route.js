@@ -54,6 +54,7 @@ async function getHandler(request) {
     config: {
       oss: ossMeta,
       exportMode: 'OSS_DIRECT',
+      server_public_url: compression.server_public_url || '',
       compression: {
         enabled: compression.compress_enabled === '1',
         maxWidth: parseInt(compression.compress_max_width, 10),
@@ -76,7 +77,11 @@ async function postHandler(request) {
     return Response.json({ success: false, error: '请求体必须是 JSON' }, { status: 400 });
   }
 
-  const { compression } = body;
+  const { compression, server_public_url } = body;
+  if (server_public_url !== undefined) {
+    db.setSetting('server_public_url', server_public_url.trim());
+  }
+
   if (compression) {
     if (compression.enabled !== undefined) {
       db.setSetting('compress_enabled', compression.enabled ? '1' : '0');

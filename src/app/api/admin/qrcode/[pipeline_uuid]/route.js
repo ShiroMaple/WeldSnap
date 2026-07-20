@@ -26,13 +26,21 @@ async function handler(request, { params }) {
     return Response.json({ success: false, error: '找不到该管线记录' }, { status: 404 });
   }
 
-  // 1. 获取局域网 IP 与端口
+  // 1. 获取局域网 IP 与端口及系统配置公网地址
   const ips = getLocalIPs();
   const ip = ips[0] || 'localhost';
   const port = process.env.PORT || 3000;
 
+  let baseUrl = db.getSetting('server_public_url');
+  if (baseUrl) {
+    baseUrl = baseUrl.replace(/\/+$/, '');
+  }
+  if (!baseUrl) {
+    baseUrl = `http://${ip}:${port}`;
+  }
+
   // 2. 构造手机扫码端地址 (Next.js 路由 /upload?pipeline_uuid=...)
-  const url = `http://${ip}:${port}/upload?pipeline_uuid=${pipelineUuid}`;
+  const url = `${baseUrl}/upload?pipeline_uuid=${pipelineUuid}`;
 
   // 3. 生成二维码 Base64
   let qrDataUrl;

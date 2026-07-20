@@ -71,7 +71,7 @@ export default function WeldMatrix({
     fetch('/api/settings/compression')
       .then(r => r.json())
       .then(data => { if (data.success) setCompressConfig(data.compression); })
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   const handleStartEditWeld = (uuid, currentNo) => {
@@ -133,24 +133,24 @@ export default function WeldMatrix({
   // 计算自然排序后的焊口列表 (支持自然排序与上传时间排序)
   const sortedRecords = sortDirection
     ? [...records].sort((a, b) => {
-        if (sortKey === 'uploaded_at') {
-          const valA = a.uploaded_at || '';
-          const valB = b.uploaded_at || '';
-          // 比较字符串时间 (空值往后排)
-          if (!valA && valB) return 1;
-          if (valA && !valB) return -1;
-          if (!valA && !valB) return 0;
-          return sortDirection === 'asc'
-            ? valA.localeCompare(valB)
-            : valB.localeCompare(valA);
-        } else {
-          // weld_no 自然排序 (支持 W-2 排在 W-10 前面)
-          const valA = a.weld_no || '';
-          const valB = b.weld_no || '';
-          const compareResult = valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
-          return sortDirection === 'asc' ? compareResult : -compareResult;
-        }
-      })
+      if (sortKey === 'uploaded_at') {
+        const valA = a.uploaded_at || '';
+        const valB = b.uploaded_at || '';
+        // 比较字符串时间 (空值往后排)
+        if (!valA && valB) return 1;
+        if (valA && !valB) return -1;
+        if (!valA && !valB) return 0;
+        return sortDirection === 'asc'
+          ? valA.localeCompare(valB)
+          : valB.localeCompare(valA);
+      } else {
+        // weld_no 自然排序 (支持 W-2 排在 W-10 前面)
+        const valA = a.weld_no || '';
+        const valB = b.weld_no || '';
+        const compareResult = valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
+        return sortDirection === 'asc' ? compareResult : -compareResult;
+      }
+    })
     : records;
 
   const handleMouseEnter = (photoPath, event) => {
@@ -191,7 +191,7 @@ export default function WeldMatrix({
     const targetWeld = records.find(r => r.weld_no === viewPhotoInfo.weldNo);
     if (!targetWeld) return;
 
-    if (!confirm(`确定将该工序照片标记为不合格？\n标记后状态将变更为“需重传”，且会通知施工人员。`)) return;
+    if (!confirm(`确定将该工序照片标记为不合格？\n标记后状态将变更为“需重传”。`)) return;
 
     try {
       const resp = await fetch('/api/admin/photo/reject', {
@@ -805,7 +805,7 @@ export default function WeldMatrix({
                 onClick={handleDownloadPhoto}
                 className="h-10 px-6 bg-[#0f62fe] hover:bg-[#0353e9] text-white text-[13px] cursor-pointer rounded-none border-none outline-none font-medium"
               >
-                保存下载图片
+                保存图片
               </button>
             </div>
           </div>

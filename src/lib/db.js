@@ -737,6 +737,7 @@ const DEFAULT_SETTINGS = {
   compress_max_width: '1920',
   compress_max_height: '1080',
   compress_quality: '0.8',
+  server_public_url: '',
 };
 
 function getSetting(key) {

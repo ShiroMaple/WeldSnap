@@ -3,6 +3,7 @@ node_modules/
 
 exports/
 docs/
+scratch/
 
 # 本地 SQLite 数据库及缓存文件
 data/

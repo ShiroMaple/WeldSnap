@@ -969,14 +969,40 @@ export default function AdminPage() {
                 </div>
               </div>
 
-              {/* Right Column: 照片压缩参数配置 */}
+              {/* Right Column: 系统配置与照片参数 */}
               <div className="border border-[#e0e0e0] p-6 bg-white rounded-none">
-                <h2 className="text-[20px] font-light text-[#161616] mb-1">照片上传压缩参数</h2>
+                <h2 className="text-[20px] font-light text-[#161616] mb-1">系统参数配置</h2>
                 <p className="text-[12px] text-[#525252] mb-6">
-                  控制前端上传照片时的压缩行为。参数修改后对所有新上传立即生效。
+                  配置服务器公网访问地址及前端照片压缩行为。修改后对所有新操作立即生效。
                 </p>
 
-                <div className="space-y-5">
+                <div className="space-y-6">
+                  {/* 服务器公网访问地址 */}
+                  <div>
+                    <label className="text-[13px] text-[#161616] font-medium block mb-2">服务器公网访问地址 (管线二维码链接前缀)</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={serverPublicUrl}
+                        onChange={(e) => setServerPublicUrl(e.target.value)}
+                        placeholder="例如: http://47.99.125.9:4002"
+                        className="flex-1 h-9 px-3 bg-white border border-[#c6c6c6] text-[13px] outline-none focus:border-[#0f62fe] rounded-none placeholder-[#8d8d8d]"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setServerPublicUrl(window.location.origin)}
+                        className="h-9 px-4 border border-[#0f62fe] hover:bg-[#edf5ff] text-[#0f62fe] text-[12px] cursor-pointer rounded-none font-medium bg-white outline-none"
+                      >
+                        自动获取
+                      </button>
+                    </div>
+                    <p className="text-[12px] text-[#8d8d8d] mt-2">
+                      配置后，生成的二维码扫描链接将使用该公网地址。留空则自动降级使用上面展示的局域网 IP。
+                    </p>
+                  </div>
+
+                  <hr className="border-t border-[#e0e0e0]" />
+
                   {/* 启停开关 */}
                   <div className="flex items-center gap-3">
                     <label className="text-[13px] text-[#161616] font-medium w-24">启用压缩</label>
@@ -1060,7 +1086,7 @@ export default function AdminPage() {
                       disabled={savingCompression}
                       className="h-9 px-6 bg-[#0f62fe] hover:bg-[#0353e9] text-white text-[13px] cursor-pointer rounded-none border-none font-medium disabled:opacity-50"
                     >
-                      {savingCompression ? '保存中...' : '保存压缩参数'}
+                      {savingCompression ? '保存中...' : '保存系统配置'}
                     </button>
                   </div>
                 </div>
