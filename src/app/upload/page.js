@@ -200,11 +200,23 @@ function UploadContent() {
       if (resp.ok && data.success) {
         setSelectedPipeline(data.pipeline_no);
         setWeldsList(data.welds || []);
-        setSelectedProject({
+        
+        const projectObj = {
+          uuid: data.project_uuid,
+          project_name: data.project_name,
+          construction_no: data.construction_no,
+          weld_prefix: data.weld_prefix || '',
           name: data.project_name,
           constructionNo: data.construction_no,
           weldPrefix: data.weld_prefix || '',
-        });
+        };
+        setSelectedProject(projectObj);
+
+        // 如果用户从扫码或搜索调起，预先加载该项目的管线列表，以便返回/切换时正常呈现
+        if (data.project_uuid) {
+          fetchPipelinesOfProject(data.project_uuid);
+        }
+
         setCurrentLevel(2);
       } else {
         alert(data.error || '定位管线失败');
@@ -685,9 +697,9 @@ function UploadContent() {
         {currentLevel === 1.5 && (
           <div className="space-y-3">
             <div className="bg-[#edf5ff] border border-[#0f62fe] p-3 text-[13px]">
-              <span className="text-[13px] text-[#0f62fe] block">已选项目</span>
+              <span className="text-[13px] text-[#0f62fe] block font-medium">已选项目</span>
               <span className="font-semibold text-[#161616]">
-                {selectedProject?.project_name} ({selectedProject?.construction_no})
+                {selectedProject?.project_name || selectedProject?.name} ({selectedProject?.construction_no || selectedProject?.constructionNo})
               </span>
             </div>
 

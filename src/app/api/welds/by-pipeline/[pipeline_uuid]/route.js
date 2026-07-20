@@ -24,15 +24,16 @@ async function handler(request, { params }) {
     return Response.json({ success: false, error: '找不到该管线记录' }, { status: 404 });
   }
 
-  const project = db.db.prepare('SELECT project_name, construction_no, weld_prefix FROM projects WHERE id = ?').get(pipeline.project_id);
+  const project = db.db.prepare('SELECT uuid, project_name, construction_no, weld_prefix FROM projects WHERE id = ?').get(pipeline.project_id);
   const welds = db.listWelds(pipelineUuid);
 
   return Response.json({
     success: true,
     pipeline_no: pipeline.pipeline_no,
-    project_name: project.project_name,
-    construction_no: project.construction_no,
-    weld_prefix: project.weld_prefix,
+    project_uuid: project ? project.uuid : null,
+    project_name: project ? project.project_name : '',
+    construction_no: project ? project.construction_no : '',
+    weld_prefix: project ? project.weld_prefix : '',
     welds,
   });
 }
