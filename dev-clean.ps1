@@ -28,4 +28,5 @@ Write-Host ""
 # [3/3] 启动开发服务器
 Write-Host "[3/3] Starting pnpm dev ..." -ForegroundColor Yellow
 Write-Host ""
-pnpm dev
+pnpm build
+pnpm start

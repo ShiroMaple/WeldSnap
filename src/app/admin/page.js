@@ -61,6 +61,7 @@ export default function AdminPage() {
   const [filterStatus, setFilterStatus] = useState('');
 
   // 成员与设置数据
+  const [users, setUsers] = useState([]);
   const [settings, setSettings] = useState(null);
 
   // ─── 照片压缩参数状态 ───────────────────────────────────
@@ -1009,14 +1010,12 @@ export default function AdminPage() {
                     <button
                       type="button"
                       onClick={() => setCompressEnabled(!compressEnabled)}
-                      className={`relative w-12 h-6 cursor-pointer transition-colors duration-200 border-none p-0 shrink-0 rounded-none ${
-                        compressEnabled ? 'bg-[#0f62fe]' : 'bg-[#8d8d8d]'
-                      }`}
+                      className={`relative w-12 h-6 cursor-pointer transition-colors duration-200 border-none p-0 shrink-0 rounded-none ${compressEnabled ? 'bg-[#0f62fe]' : 'bg-[#8d8d8d]'
+                        }`}
                     >
                       <span
-                        className={`absolute top-[2px] left-0 w-5 h-5 bg-white transition-transform duration-200 ${
-                          compressEnabled ? 'translate-x-[26px]' : 'translate-x-[2px]'
-                        }`}
+                        className={`absolute top-[2px] left-0 w-5 h-5 bg-white transition-transform duration-200 ${compressEnabled ? 'translate-x-[26px]' : 'translate-x-[2px]'
+                          }`}
                       />
                     </button>
                     <span className="text-[12px] text-[#525252]">
