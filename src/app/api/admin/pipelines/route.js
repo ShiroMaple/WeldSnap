@@ -9,6 +9,8 @@ const { withTrace } = require('../../../../middleware/withTrace');
 const { requireAdmin } = require('../../../../middleware/auth');
 const db = require('../../../../lib/db');
 
+const { logAudit } = require('../../../../lib/audit');
+
 async function getHandler(request) {
   requireAdmin(request);
 
@@ -41,6 +43,12 @@ async function postHandler(request) {
 
   const result = db.createPipeline(project_uuid, pipeline_no);
   if (result.success) {
+    const proj = db.getProjectByUuid(project_uuid);
+    logAudit(
+      'CREATE_PIPELINE',
+      `在项目 [${proj ? proj.project_name : project_uuid}] 下新建了管线号 [${result.pipeline_no}]`,
+      { project_uuid, pipeline_no: result.pipeline_no, uuid: result.uuid }
+    );
     return Response.json(result);
   } else {
     return Response.json(result, { status: 400 });

@@ -9,6 +9,8 @@ const { withTrace } = require('../../../../../middleware/withTrace');
 const { requireAdmin } = require('../../../../../middleware/auth');
 const db = require('../../../../../lib/db');
 
+const { logAudit } = require('../../../../../lib/audit');
+
 async function putHandler(request, { params }) {
   requireAdmin(request);
 
@@ -29,8 +31,15 @@ async function putHandler(request, { params }) {
     return Response.json({ success: false, error: '管线号不能为空' }, { status: 400 });
   }
 
+  const oldPipe = db.getPipelineByUuid(uuid);
+
   const result = db.updatePipeline(uuid, pipeline_no);
   if (result.success) {
+    logAudit(
+      'UPDATE_PIPELINE',
+      `修改了管线号: ${oldPipe ? `[${oldPipe.pipeline_no}] -> ` : ''}[${pipeline_no.trim()}]`,
+      { uuid, oldNo: oldPipe?.pipeline_no, newNo: pipeline_no.trim() }
+    );
     return Response.json(result);
   } else {
     return Response.json(result, { status: 400 });
@@ -45,8 +54,15 @@ async function deleteHandler(request, { params }) {
     return Response.json({ success: false, error: '缺少管线 UUID' }, { status: 400 });
   }
 
+  const oldPipe = db.getPipelineByUuid(uuid);
+
   const result = db.deletePipeline(uuid);
   if (result.success) {
+    logAudit(
+      'DELETE_PIPELINE',
+      `删除了管线号 [${oldPipe ? oldPipe.pipeline_no : uuid}]`,
+      { uuid, pipeline_no: oldPipe?.pipeline_no }
+    );
     return Response.json(result);
   } else {
     return Response.json(result, { status: 400 });

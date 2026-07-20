@@ -41,6 +41,10 @@ async function getHandler(request) {
 /**
  * 创建新用户 (系统管理员权限)
  */
+const { logAudit } = require('../../../../lib/audit');
+
+const ROLE_CN = { admin: '系统管理员', project_admin: '项目管理员', worker: '施工人员' };
+
 async function postHandler(request) {
   requireSystemAdmin(request);
 
@@ -62,6 +66,11 @@ async function postHandler(request) {
 
   const result = db.createUser(username, password, role, display_name || username);
   if (result.success) {
+    logAudit(
+      'CREATE_USER',
+      `创建了新用户账号 "${username.trim()}" (姓名: ${display_name || username}, 角色: ${ROLE_CN[role] || role})`,
+      { username: username.trim(), role, display_name }
+    );
     return Response.json(result);
   } else {
     return Response.json(result, { status: 400 });

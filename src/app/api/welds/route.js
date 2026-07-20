@@ -11,6 +11,8 @@ const { withTrace } = require('../../../middleware/withTrace');
 const { requireAuth } = require('../../../middleware/auth');
 const db = require('../../../lib/db');
 
+const { logAudit } = require('../../../lib/audit');
+
 async function postHandler(request) {
   // 仅限已登录用户（普通工人和管理员均可）
   const user = requireAuth(request);
@@ -32,6 +34,12 @@ async function postHandler(request) {
 
   const result = db.createWeld(pipeline_uuid, weld_no, createSource);
   if (result.success) {
+    const pipe = db.getPipelineByUuid(pipeline_uuid);
+    logAudit(
+      'CREATE_WELD',
+      `在管线 [${pipe ? pipe.pipeline_no : pipeline_uuid}] 下${createSource}了焊口号 [${result.weld_no}]`,
+      { pipeline_uuid, weld_no: result.weld_no, create_source: createSource, uuid: result.uuid }
+    );
     return Response.json(result);
   } else {
     return Response.json(result, { status: 400 });

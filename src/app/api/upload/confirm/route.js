@@ -10,6 +10,10 @@ const { setTraceField } = require('../../../../lib/trace');
 const { confirmUpload } = require('../../../../services/upload.service');
 const db = require('../../../../lib/db');
 
+const { logAudit } = require('../../../../lib/audit');
+
+const PHOTO_TYPE_CN = { zudui: '组对', dadi: '打底', gaimian: '盖面' };
+
 async function handler(request) {
   const session = requireAuth(request);
 
@@ -43,6 +47,13 @@ async function handler(request) {
       photo_type,
       objectKey,
       session.display_name || session.username
+    );
+
+    const typeCN = PHOTO_TYPE_CN[photo_type] || photo_type;
+    logAudit(
+      'UPLOAD_PHOTO',
+      `为管线 [${weld.pipeline_no}] / 焊口 [${weld.weld_no}] 上传了 [${typeCN}] 工序照片`,
+      { weld_uuid, pipeline_no: weld.pipeline_no, weld_no: weld.weld_no, photo_type, objectKey }
     );
 
     return Response.json({ success: true, objectKey });

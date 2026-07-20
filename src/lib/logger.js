@@ -26,6 +26,7 @@ const isDev = process.env.NODE_ENV !== 'production';
 // ─── Pino 基础配置 ───────────────────────────────────────
 const baseOptions = {
   level: isDev ? 'debug' : 'info',
+  customLevels: { audit: 35 },
 
   // 敏感字段脱敏
   redact: {
@@ -93,7 +94,7 @@ const logger = pino({
 
 // ─── 动态日志级别控制 ────────────────────────────────────
 function setLogLevel(newLevel) {
-  const VALID_LEVELS = ['trace', 'debug', 'info', 'warn', 'error', 'fatal'];
+  const VALID_LEVELS = ['trace', 'debug', 'info', 'audit', 'warn', 'error', 'fatal'];
   if (VALID_LEVELS.includes(newLevel)) {
     logger.level = newLevel;
     return true;

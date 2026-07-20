@@ -17,6 +17,7 @@ const LEVEL_COLORS = {
   10: { bg: '#f4f4f4', text: '#525252', label: 'TRACE' },
   20: { bg: '#e0e0e0', text: '#161616', label: 'DEBUG' },
   30: { bg: '#edf5ff', text: '#0f62fe', label: 'INFO' },
+  35: { bg: '#f6f2ff', text: '#8a3ff8', label: 'AUDIT' },
   40: { bg: '#fcf4d6', text: '#b28600', label: 'WARN' },
   50: { bg: '#fff2f0', text: '#da1e28', label: 'ERROR' },
   60: { bg: '#fff2f0', text: '#750e13', label: 'FATAL' },
@@ -34,6 +35,7 @@ export default function LogViewer() {
   // 筛选条件
   const [levelFilter, setLevelFilter] = useState('');
   const [errorOnly, setErrorOnly] = useState(false);
+  const [auditOnly, setAuditOnly] = useState(false);
   const [traceIdFilter, setTraceIdFilter] = useState('');
   const [keyword, setKeyword] = useState('');
   const [autoTail, setAutoTail] = useState(false);
@@ -63,6 +65,7 @@ export default function LogViewer() {
         pageSize: pageSize.toString(),
         level: levelFilter,
         errorOnly: errorOnly ? 'true' : 'false',
+        auditOnly: auditOnly ? 'true' : 'false',
         traceId: traceIdFilter,
         keyword,
       });
@@ -79,7 +82,7 @@ export default function LogViewer() {
     } finally {
       if (!isSilent) setLoading(false);
     }
-  }, [page, pageSize, levelFilter, errorOnly, traceIdFilter, keyword]);
+  }, [page, pageSize, levelFilter, errorOnly, auditOnly, traceIdFilter, keyword]);
 
   useEffect(() => {
     fetchGlobalLevel();
@@ -127,6 +130,7 @@ export default function LogViewer() {
       format,
       level: levelFilter,
       errorOnly: errorOnly ? 'true' : 'false',
+      auditOnly: auditOnly ? 'true' : 'false',
       traceId: traceIdFilter,
       keyword,
     });
@@ -154,6 +158,7 @@ export default function LogViewer() {
             <option value="trace">TRACE (全量最详细)</option>
             <option value="debug">DEBUG (开发调试)</option>
             <option value="info">INFO (常规运维 - 推荐)</option>
+            <option value="audit">AUDIT (业务审计专属)</option>
             <option value="warn">WARN (仅告警与报错)</option>
             <option value="error">ERROR (仅严重错误)</option>
             <option value="fatal">FATAL (仅崩溃级故障)</option>
@@ -195,6 +200,7 @@ export default function LogViewer() {
               <option value="trace">TRACE</option>
               <option value="debug">DEBUG</option>
               <option value="info">INFO</option>
+              <option value="audit">AUDIT (业务审计)</option>
               <option value="warn">WARN</option>
               <option value="error">ERROR</option>
               <option value="fatal">FATAL</option>
@@ -214,9 +220,29 @@ export default function LogViewer() {
             </div>
           )}
 
+          {/* 快捷按钮：仅看业务审计 */}
+          <button
+            onClick={() => {
+              setAuditOnly(!auditOnly);
+              if (!auditOnly) setErrorOnly(false);
+              setPage(1);
+            }}
+            className={`h-8 px-3 text-[12px] font-medium cursor-pointer rounded-none border transition-colors ${
+              auditOnly
+                ? 'bg-[#8a3ff8] text-white border-[#8a3ff8]'
+                : 'bg-white text-[#8a3ff8] border-[#8a3ff8] hover:bg-[#f6f2ff]'
+            }`}
+          >
+            {auditOnly ? '✓ 仅看业务审计 (已激活)' : '📑 仅看业务审计'}
+          </button>
+
           {/* 快捷按钮：只看报错 */}
           <button
-            onClick={() => { setErrorOnly(!errorOnly); setPage(1); }}
+            onClick={() => {
+              setErrorOnly(!errorOnly);
+              if (!errorOnly) setAuditOnly(false);
+              setPage(1);
+            }}
             className={`h-8 px-3 text-[12px] font-medium cursor-pointer rounded-none border transition-colors ${
               errorOnly
                 ? 'bg-[#da1e28] text-white border-[#da1e28]'
@@ -227,13 +253,14 @@ export default function LogViewer() {
           </button>
 
           {/* 重置筛选 */}
-          {(keyword || levelFilter || traceIdFilter || errorOnly) && (
+          {(keyword || levelFilter || traceIdFilter || errorOnly || auditOnly) && (
             <button
               onClick={() => {
                 setKeyword('');
                 setLevelFilter('');
                 setTraceIdFilter('');
                 setErrorOnly(false);
+                setAuditOnly(false);
                 setPage(1);
               }}
               className="h-8 px-3 border border-[#c6c6c6] bg-white hover:bg-[#e8e8e8] text-[12px] text-[#161616] cursor-pointer rounded-none font-medium"

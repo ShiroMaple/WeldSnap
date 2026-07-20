@@ -11,6 +11,10 @@ const { withTrace } = require('../../../../../middleware/withTrace');
 const { requireSystemAdmin } = require('../../../../../middleware/auth');
 const db = require('../../../../../lib/db');
 
+const { logAudit } = require('../../../../../lib/audit');
+
+const ROLE_CN = { admin: '系统管理员', project_admin: '项目管理员', worker: '施工人员' };
+
 /**
  * 删除用户 (系统管理员权限)
  */
@@ -24,8 +28,15 @@ async function deleteHandler(request, { params }) {
     return Response.json({ success: false, error: '无效的用户 ID' }, { status: 400 });
   }
 
+  const oldUser = db.getUserById(numId);
+
   const result = db.deleteUser(numId);
   if (result.success) {
+    logAudit(
+      'DELETE_USER',
+      `删除了用户账号 "${oldUser ? oldUser.username : numId}" ${oldUser ? `(姓名: ${oldUser.display_name})` : ''}`,
+      { id: numId, username: oldUser?.username }
+    );
     return Response.json(result);
   } else {
     return Response.json(result, { status: 400 });
@@ -64,6 +75,11 @@ async function putHandler(request, { params }) {
 
   const result = db.updateUser(numId, username.trim(), password, role, display_name || username.trim());
   if (result.success) {
+    logAudit(
+      'UPDATE_USER',
+      `更新了用户 "${username.trim()}" 的基本信息 (角色: ${ROLE_CN[role] || role})`,
+      { id: numId, username: username.trim(), role }
+    );
     return Response.json(result);
   } else {
     return Response.json(result, { status: 400 });

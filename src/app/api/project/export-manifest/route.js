@@ -12,6 +12,7 @@ const { withTrace } = require('../../../../middleware/withTrace');
 const { requireAuth } = require('../../../../middleware/auth');
 const { getOSSClient } = require('../../../../lib/oss');
 const db = require('../../../../lib/db');
+const { logAudit } = require('../../../../lib/audit');
 
 const TYPE_NAME_MAP = {
   zudui: '组对',
@@ -83,6 +84,12 @@ async function handler(request) {
       checkAndAdd('photo_dadi', 'dadi');
       checkAndAdd('photo_gaimian', 'gaimian');
     }
+
+    logAudit(
+      'EXPORT_PHOTOS',
+      `请求打包下载了 ${welds.length} 道焊口的 ${manifest.length} 张工序照片 ZIP 压缩包`,
+      { weld_count: welds.length, photo_count: manifest.length }
+    );
 
     return Response.json({ success: true, manifest });
   } catch (err) {

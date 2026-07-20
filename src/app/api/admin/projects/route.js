@@ -9,6 +9,8 @@ const { withTrace } = require('../../../../middleware/withTrace');
 const { requireAdmin } = require('../../../../middleware/auth');
 const db = require('../../../../lib/db');
 
+const { logAudit } = require('../../../../lib/audit');
+
 async function getHandler(request) {
   requireAdmin(request);
   const projects = db.listProjects();
@@ -43,6 +45,11 @@ async function postHandler(request) {
   );
 
   if (result.success) {
+    logAudit(
+      'CREATE_PROJECT',
+      `新建了项目 "${project_name.trim()}" (施工号: ${construction_no.trim()})`,
+      { project_name: project_name.trim(), construction_no: construction_no.trim(), uuid: result.uuid }
+    );
     return Response.json(result);
   } else {
     return Response.json(result, { status: 400 });

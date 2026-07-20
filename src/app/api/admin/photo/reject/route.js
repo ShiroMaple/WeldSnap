@@ -11,6 +11,9 @@ const { withTrace } = require('../../../../../middleware/withTrace');
 const { requireAdmin } = require('../../../../../middleware/auth');
 const db = require('../../../../../lib/db');
 const { logger } = require('../../../../../lib/logger');
+const { logAudit } = require('../../../../../lib/audit');
+
+const PHOTO_TYPE_CN = { zudui: '组对', dadi: '打底', gaimian: '盖面' };
 
 async function handler(request) {
   // 校验管理员身份
@@ -35,7 +38,12 @@ async function handler(request) {
 
   try {
     const record = db.db
-      .prepare('SELECT photo_zudui, photo_dadi, photo_gaimian FROM weld_records WHERE pipeline_no = ? AND weld_no = ?')
+      .prepare(`
+        SELECT wr.id, wr.photo_zudui, wr.photo_dadi, wr.photo_gaimian
+        FROM weld_records wr
+        JOIN pipelines p ON wr.pipeline_id = p.id
+        WHERE p.pipeline_no = ? AND wr.weld_no = ?
+      `)
       .get(pipeline_no, weld_no);
 
     if (!record) {
@@ -56,10 +64,17 @@ async function handler(request) {
     const newVal = `REJECTED:${currentVal}`;
 
     db.db
-      .prepare(`UPDATE weld_records SET ${colName} = ? WHERE pipeline_no = ? AND weld_no = ?`)
-      .run(newVal, pipeline_no, weld_no);
+      .prepare(`UPDATE weld_records SET ${colName} = ? WHERE id = ?`)
+      .run(newVal, record.id);
 
     logger.info({ msg: 'photo.rejected_by_admin', pipeline_no, weld_no, photo_type });
+
+    const typeCN = PHOTO_TYPE_CN[photo_type] || photo_type;
+    logAudit(
+      'REJECT_PHOTO',
+      `将管线 [${pipeline_no}] / 焊口 [${weld_no}] 的 [${typeCN}] 工序照片标记为不合格`,
+      { pipeline_no, weld_no, photo_type }
+    );
 
     return Response.json({ success: true });
   } catch (err) {

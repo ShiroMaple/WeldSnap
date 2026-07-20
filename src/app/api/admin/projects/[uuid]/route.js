@@ -9,6 +9,8 @@ const { withTrace } = require('../../../../../middleware/withTrace');
 const { requireAdmin } = require('../../../../../middleware/auth');
 const db = require('../../../../../lib/db');
 
+const { logAudit } = require('../../../../../lib/audit');
+
 async function putHandler(request, { params }) {
   requireAdmin(request);
 
@@ -49,6 +51,11 @@ async function putHandler(request, { params }) {
   );
 
   if (result.success) {
+    logAudit(
+      'UPDATE_PROJECT',
+      `修改了项目 "${project_name.trim()}" 的基本信息 (施工号: ${construction_no.trim()}, 状态: ${status})`,
+      { uuid, project_name: project_name.trim(), status }
+    );
     return Response.json(result);
   } else {
     return Response.json(result, { status: 400 });
@@ -65,8 +72,15 @@ async function deleteHandler(request, { params }) {
     return Response.json({ success: false, error: '缺少项目 UUID' }, { status: 400 });
   }
 
+  const proj = db.getProjectByUuid(uuid);
+
   const result = db.deleteProject(uuid);
   if (result.success) {
+    logAudit(
+      'DELETE_PROJECT',
+      `删除了项目 "${proj ? proj.project_name : uuid}" ${proj ? `(施工号: ${proj.construction_no})` : ''}`,
+      { uuid, construction_no: proj?.construction_no }
+    );
     return Response.json(result);
   } else {
     return Response.json(result, { status: 400 });
