@@ -70,6 +70,7 @@ export default function AdminPage() {
   const [compressMaxHeight, setCompressMaxHeight] = useState(1080);
   const [compressQuality, setCompressQuality] = useState(0.8);
   const [savingCompression, setSavingCompression] = useState(false);
+  const [serverPublicUrl, setServerPublicUrl] = useState('');
 
   // ─── 弹窗 Modals 状态 ───────────────────────────────────
   // 1. Excel 导入弹窗
@@ -182,11 +183,14 @@ export default function AdminPage() {
       const data = await resp.json();
       if (resp.ok && data.success) {
         setSettings(data);
-        if (data.config && data.config.compression) {
-          setCompressEnabled(data.config.compression.enabled);
-          setCompressMaxWidth(data.config.compression.maxWidth);
-          setCompressMaxHeight(data.config.compression.maxHeight);
-          setCompressQuality(data.config.compression.quality);
+        if (data.config) {
+          if (data.config.compression) {
+            setCompressEnabled(data.config.compression.enabled);
+            setCompressMaxWidth(data.config.compression.maxWidth);
+            setCompressMaxHeight(data.config.compression.maxHeight);
+            setCompressQuality(data.config.compression.quality);
+          }
+          setServerPublicUrl(data.config.server_public_url || '');
         }
       }
     } catch { }
@@ -199,6 +203,7 @@ export default function AdminPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          server_public_url: serverPublicUrl,
           compression: {
             enabled: compressEnabled,
             maxWidth: compressMaxWidth,
@@ -209,7 +214,7 @@ export default function AdminPage() {
       });
       const data = await resp.json();
       if (resp.ok && data.success) {
-        alert('压缩参数保存成功！');
+        alert('系统配置保存成功！');
         fetchSettings();
       } else {
         alert(data.error || '保存失败');
