@@ -68,9 +68,10 @@ jobs:
             tar -xzf release.tar.gz
             rm release.tar.gz
             
-            # 确保存储目录和内置 SQLite 隔离区绝对完好
+            # 确保存储目录、日志目录和内置 SQLite 隔离区绝对完好
             mkdir -p data
             mkdir -p exports
+            mkdir -p logs
             
             # 解压后的 server.js 是 Next.js standalone 产物，不是历史 V1 Express 入口；使用服务器持久化的环境文件。
             pm2 delete WeldSnap || true

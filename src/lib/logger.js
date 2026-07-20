@@ -12,6 +12,7 @@
  */
 
 const pino = require('pino');
+const path = require('path');
 const { getTraceStore } = require('./trace');
 
 // 🚀 强制 Next.js standalone 编译器追踪并打包 pino-roll 与 pino-pretty 外部依赖（及其子依赖如 sonic-boom）
@@ -76,10 +77,12 @@ if (isDev) {
 }
 
 // 统一保存 NDJSON JSON 行日志文件用于“系统日志”前端分析与轮转导出
+const logFilePath = path.resolve(process.cwd(), 'logs', 'weldsnap-run.log');
+
 targets.push({
   target: 'pino-roll',
   options: {
-    file: 'logs/weldsnap-run.log',
+    file: logFilePath,
     frequency: 'daily',
     limit: { count: 30 },
     size: '10m',
