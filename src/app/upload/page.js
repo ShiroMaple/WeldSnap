@@ -1,17 +1,21 @@
 'use client';
 
 /**
- * 移动端自适应照片上传页面 (V2.0 工业大触控与多层级导航重构版)
+ * 移动端自适应照片上传页面 (V2.2 极简三列工序卡片与顺序切换版)
  *
  * 特性：
- *   - 符合 IBM Carbon Design System 工业风硬约束（52px+ 触控目标）
- *   - 多层级穿透导航（Level 0 主入口 ➔ Level 1 项目列表 ➔ Level 1.5 管线列表 ➔ Level 2 焊口选择 ➔ Level 3 三工序拍照）
- *   - 焦点 Hero 置顶卡片：记录并一键直达“最近一次打开的项目”
- *   - 扫码直达：扫描包含 pipeline_uuid 的二维码，自动定位至对应管线层级
- *   - 模糊搜索备用入口：方便无二维码时的快速关键字检索
+ *   - Header 搜索框集成于退出按钮左侧
+ *   - 项目列表直接平铺展示在 Level 0 主入口层
+ *   - 焊口列表使用带“⚠️ 不合格”优先置顶、“✓ 已拍摄”置底的触控卡片
+ *   - Level 3 工序卡片重构为【三列布局】：
+ *       - 最左列：工序名称与当前状态
+ *       - 中间列：照片预览图（已上传缩略图/不合格原图/暂无照片占位框）
+ *       - 最右列：大触控拍照/重拍按钮
+ *   - 移除冗余的提交按钮，替换为按名称顺序切换的【上一个焊口】与【下一个焊口】按钮
+ *       - 边界拦截：列表首尾自动变为“已是第一个焊口” / “已是最后一个焊口”并禁用
  */
 
-import { useState, useEffect, useRef, Suspense } from 'react';
+import { useState, useEffect, useRef, useMemo, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { compressImage } from '@/lib/compress';
 import QRScannerModal from '@/components/QRScannerModal';
@@ -28,7 +32,7 @@ function UploadContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // ─── 层级导航状态 (0: 主入口, 1: 项目列表, 1.5: 管线列表, 2: 焊口选择, 3: 拍照上传) ─────────
+  // ─── 层级导航状态 (0: 主入口&项目列表, 1.5: 管线列表, 2: 焊口列表与新增, 3: 拍照上传) ─────────
   const [currentLevel, setCurrentLevel] = useState(0);
 
   // ─── 扫码 Modal 状态 ──────────────────────────────────────────
@@ -38,19 +42,19 @@ function UploadContent() {
   const [projectsList, setProjectsList] = useState([]);
   const [loadingProjects, setLoadingProjects] = useState(false);
 
-  const [selectedProject, setSelectedProject] = useState(null); // { uuid, construction_no, project_name, weld_prefix, ... }
+  const [selectedProject, setSelectedProject] = useState(null);
   const [pipelinesList, setPipelinesList] = useState([]);
   const [loadingPipelines, setLoadingPipelines] = useState(false);
 
   const [selectedPipelineUuid, setSelectedPipelineUuid] = useState('');
-  const [selectedPipeline, setSelectedPipeline] = useState(''); // 管线编号
+  const [selectedPipeline, setSelectedPipeline] = useState('');
   const [weldsList, setWeldsList] = useState([]);
   const [selectedWeld, setSelectedWeld] = useState('');
 
   // 最近一次打开的项目 (LocalStorage 缓存)
   const [recentProject, setRecentProject] = useState(null);
 
-  // 备用搜索框状态
+  // Header 搜索框状态
   const [pipelineQuery, setPipelineQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [showSearchResults, setShowSearchResults] = useState(false);
@@ -63,7 +67,6 @@ function UploadContent() {
   const [uploadedPhotos, setUploadedPhotos] = useState({ zudui: null, dadi: null, gaimian: null });
   const [statusMsg, setStatusMsg] = useState({ zudui: '未上传', dadi: '未上传', gaimian: '未上传' });
   const [isSubmitting, setIsSubmitting] = useState({ zudui: false, dadi: false, gaimian: false });
-  const [showSuccessPage, setShowSuccessPage] = useState(false);
 
   // 文件 Input Refs
   const fileInputRefs = {
@@ -93,7 +96,7 @@ function UploadContent() {
           if (cached) {
             setRecentProject(JSON.parse(cached));
           }
-        } catch {}
+        } catch { }
 
         // 拉取项目列表数据
         fetchProjects();
@@ -117,7 +120,7 @@ function UploadContent() {
     fetch('/api/settings/compression')
       .then((r) => r.json())
       .then((data) => { if (data.success) setCompressConfig(data.compression); })
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   // ─── API 请求函数 ─────────────────────────────────────────────
@@ -127,9 +130,7 @@ function UploadContent() {
       const resp = await fetch('/api/projects');
       const data = await resp.json();
       if (resp.ok && data.success) {
-        // 智能排序：优先最近更新(或创建时间) -> 完成率未完成的排前面 -> 创建时间
         const sorted = (data.projects || []).sort((a, b) => {
-          // 比较质量完成度 (未满 100% 的排在前面，优先方便补全)
           if (a.quality_progress !== b.quality_progress) {
             if (a.quality_progress < 100 && b.quality_progress === 100) return -1;
             if (a.quality_progress === 100 && b.quality_progress < 100) return 1;
@@ -138,7 +139,7 @@ function UploadContent() {
         });
         setProjectsList(sorted);
       }
-    } catch {}
+    } catch { }
     setLoadingProjects(false);
   };
 
@@ -151,7 +152,7 @@ function UploadContent() {
         setPipelinesList(data.pipelines || []);
         setSelectedProject(data.project);
       }
-    } catch {}
+    } catch { }
     setLoadingPipelines(false);
   };
 
@@ -165,10 +166,9 @@ function UploadContent() {
     }
   };
 
-  // 选择某个项目 (Level 0 -> Level 1.5)
+  // 选择某个项目 (Level 0 ➔ Level 1.5)
   const handleSelectProject = (project) => {
     setSelectedProject(project);
-    // 写入 LocalStorage 缓存“最近一次打开的项目”
     try {
       const cacheObj = {
         uuid: project.uuid,
@@ -178,7 +178,7 @@ function UploadContent() {
       };
       localStorage.setItem('weldsnap_last_project', JSON.stringify(cacheObj));
       setRecentProject(cacheObj);
-    } catch {}
+    } catch { }
 
     fetchPipelinesOfProject(project.uuid);
     setCurrentLevel(1.5);
@@ -205,7 +205,7 @@ function UploadContent() {
           constructionNo: data.construction_no,
           weldPrefix: data.weld_prefix || '',
         });
-        setCurrentLevel(2); // 进入焊口选择/现场新增层级
+        setCurrentLevel(2);
       } else {
         alert(data.error || '定位管线失败');
         setSelectedPipelineUuid('');
@@ -234,15 +234,17 @@ function UploadContent() {
         setSearchResults(data.results || []);
         setShowSearchResults(true);
       }
-    } catch {}
+    } catch { }
   };
 
-  // 现场快捷新增焊口
+  // 现场快捷新增焊口 (与 PC 端逻辑一致)
   const handleAddWeldOnsite = async () => {
     if (!selectedPipelineUuid) return;
     const prefix = selectedProject?.weld_prefix || selectedProject?.weldPrefix;
+    const customName = newWeldName.trim();
 
-    if (!prefix && !newWeldName.trim()) {
+    // 如果未填写自定义名称，且未预设项目前缀，则给出提示
+    if (!customName && !prefix) {
       alert('请输入要新增的焊口号');
       return;
     }
@@ -254,14 +256,13 @@ function UploadContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           pipeline_uuid: selectedPipelineUuid,
-          weld_no: prefix ? '' : newWeldName.trim(),
+          weld_no: customName, // 优先以输入框填写的名称创建，若为空则由后端按预设前缀自增
         }),
       });
       const data = await resp.json();
       if (resp.ok && data.success) {
         alert(`成功新增焊口: ${data.weld_no}`);
         setNewWeldName('');
-        // 重新加载焊口列表并自动选中当前新增焊口
         const listResp = await fetch(`/api/welds/by-pipeline/${encodeURIComponent(selectedPipelineUuid)}`);
         const listData = await listResp.json();
         if (listResp.ok && listData.success) {
@@ -301,7 +302,90 @@ function UploadContent() {
       setStatusMsg({ zudui: sZudui.label, dadi: sDadi.label, gaimian: sGaimian.label });
     }
 
-    setCurrentLevel(3); // 进入拍照上传层级
+    setCurrentLevel(3);
+  };
+
+  // 焊口列表智能排序：1. 不合格优先 2. 待拍摄/进行中 3. 已完工排最后
+  const sortedWeldsList = useMemo(() => {
+    return [...weldsList].sort((a, b) => {
+      const getPriority = (w) => {
+        const isRejected =
+          (w.photo_zudui && w.photo_zudui.startsWith('REJECTED:')) ||
+          (w.photo_dadi && w.photo_dadi.startsWith('REJECTED:')) ||
+          (w.photo_gaimian && w.photo_gaimian.startsWith('REJECTED:'));
+        if (isRejected) return 1;
+
+        const isDone =
+          w.photo_zudui && !w.photo_zudui.startsWith('REJECTED:') &&
+          w.photo_dadi && !w.photo_dadi.startsWith('REJECTED:') &&
+          w.photo_gaimian && !w.photo_gaimian.startsWith('REJECTED:');
+        if (isDone) return 3;
+
+        return 2;
+      };
+
+      const pA = getPriority(a);
+      const pB = getPriority(b);
+      if (pA !== pB) return pA - pB;
+
+      return a.weld_no.localeCompare(b.weld_no, undefined, { numeric: true });
+    });
+  }, [weldsList]);
+
+  // 按焊口名称自然顺序排序（用于上一个/下一个焊口顺序切换）
+  const nameSortedWelds = useMemo(() => {
+    return [...weldsList].sort((a, b) =>
+      a.weld_no.localeCompare(b.weld_no, undefined, { numeric: true })
+    );
+  }, [weldsList]);
+
+  // 当前焊口在名称顺序列表中的索引
+  const currentWeldIndex = useMemo(() => {
+    return nameSortedWelds.findIndex((w) => w.weld_no === selectedWeld);
+  }, [nameSortedWelds, selectedWeld]);
+
+  const hasPrevWeld = currentWeldIndex > 0;
+  const hasNextWeld = currentWeldIndex >= 0 && currentWeldIndex < nameSortedWelds.length - 1;
+
+  const handlePrevWeld = () => {
+    if (hasPrevWeld) {
+      const targetWeld = nameSortedWelds[currentWeldIndex - 1];
+      handleSelectWeld(targetWeld.weld_no, weldsList);
+    }
+  };
+
+  const handleNextWeld = () => {
+    if (hasNextWeld) {
+      const targetWeld = nameSortedWelds[currentWeldIndex + 1];
+      handleSelectWeld(targetWeld.weld_no, weldsList);
+    }
+  };
+
+  // 焊口 Badge 生成辅助函数
+  const getWeldBadge = (w) => {
+    const isRejected =
+      (w.photo_zudui && w.photo_zudui.startsWith('REJECTED:')) ||
+      (w.photo_dadi && w.photo_dadi.startsWith('REJECTED:')) ||
+      (w.photo_gaimian && w.photo_gaimian.startsWith('REJECTED:'));
+
+    if (isRejected) {
+      return { type: 'rejected', label: '⚠️ 不合格', bg: 'bg-[#da1e28]', text: 'text-white' };
+    }
+
+    const completedCount =
+      (w.photo_zudui && !w.photo_zudui.startsWith('REJECTED:') ? 1 : 0) +
+      (w.photo_dadi && !w.photo_dadi.startsWith('REJECTED:') ? 1 : 0) +
+      (w.photo_gaimian && !w.photo_gaimian.startsWith('REJECTED:') ? 1 : 0);
+
+    if (completedCount === 3) {
+      return { type: 'completed', label: '✓ 已拍摄', bg: 'bg-[#24a148]', text: 'text-white' };
+    }
+
+    if (completedCount > 0) {
+      return { type: 'progress', label: `进行中 (${completedCount}/3)`, bg: 'bg-[#edf5ff]', text: 'text-[#0f62fe] border border-[#0f62fe]' };
+    }
+
+    return { type: 'pending', label: '待拍摄', bg: 'bg-[#f4f4f4]', text: 'text-[#525252] border border-[#c6c6c6]' };
   };
 
   // 拍照与云直传 OSS
@@ -334,7 +418,6 @@ function UploadContent() {
       }
     }
 
-    // 获取预签名 URL
     setStatusMsg((prev) => ({ ...prev, [type]: '获取上传凭证...' }));
     let signedUrl, objectKey;
     try {
@@ -353,7 +436,6 @@ function UploadContent() {
       return;
     }
 
-    // 直传 OSS
     setStatusMsg((prev) => ({ ...prev, [type]: '正在上传云存储...' }));
     try {
       const ossResp = await fetch(signedUrl, {
@@ -368,7 +450,6 @@ function UploadContent() {
       return;
     }
 
-    // 回写确认
     setStatusMsg((prev) => ({ ...prev, [type]: '正在同步回写...' }));
     try {
       const confirmResp = await fetch('/api/upload/confirm', {
@@ -380,6 +461,13 @@ function UploadContent() {
       if (confirmResp.ok && confirmData.success) {
         setUploadedPhotos((prev) => ({ ...prev, [type]: objectKey }));
         setStatusMsg((prev) => ({ ...prev, [type]: '已上传' }));
+        // 重新刷新下属焊口数据以同步父级列表中已拍摄状态
+        if (selectedPipelineUuid) {
+          fetch(`/api/welds/by-pipeline/${encodeURIComponent(selectedPipelineUuid)}`)
+            .then((r) => r.json())
+            .then((d) => { if (d.success) setWeldsList(d.welds || []); })
+            .catch(() => { });
+        }
       } else {
         throw new Error(confirmData.error || '数据库回写错误');
       }
@@ -391,23 +479,6 @@ function UploadContent() {
     }
   };
 
-  const handleSubmitAll = () => {
-    setShowSuccessPage(true);
-  };
-
-  const handleResetForm = () => {
-    setShowSuccessPage(false);
-    setSelectedWeld('');
-    setUploadedPhotos({ zudui: null, dadi: null, gaimian: null });
-    setStatusMsg({ zudui: '未上传', dadi: '未上传', gaimian: '未上传' });
-    setCurrentLevel(2); // 返回当前管线的焊口选择层
-    if (selectedPipelineUuid) {
-      handleSelectPipelineUuid(selectedPipelineUuid);
-    }
-  };
-
-  const allPhotosUploaded = uploadedPhotos.zudui && uploadedPhotos.dadi && uploadedPhotos.gaimian;
-
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#f4f4f4] font-mono text-[#525252] text-[14px]">
@@ -418,16 +489,15 @@ function UploadContent() {
 
   return (
     <main className="min-h-screen bg-[#f4f4f4] p-4 font-sans select-none max-w-[600px] mx-auto flex flex-col justify-between">
-      {/* 头部条与常驻返回上一层按键 */}
-      <header className="flex items-center justify-between border-b border-[#e0e0e0] pb-3 mb-4 bg-[#f4f4f4] sticky top-0 z-[100]">
-        <div className="flex items-center space-x-2">
+      {/* 头部条：搜索功能集成于退出按钮左侧 */}
+      <header className="flex items-center justify-between border-b border-[#e0e0e0] pb-3 mb-4 bg-[#f4f4f4] sticky top-0 z-[100] gap-2">
+        <div className="flex items-center space-x-2 min-w-0 flex-shrink-0">
           {currentLevel > 0 && (
             <button
               type="button"
               onClick={() => {
                 if (currentLevel === 3) setCurrentLevel(2);
                 else if (currentLevel === 2) setCurrentLevel(1.5);
-                else if (currentLevel === 1.5) setCurrentLevel(1);
                 else setCurrentLevel(0);
               }}
               className="h-10 px-3 bg-[#393939] hover:bg-[#4c4c4c] text-white text-[13px] font-medium cursor-pointer rounded-none border-none outline-none flex items-center"
@@ -435,26 +505,56 @@ function UploadContent() {
               ‹ 返回
             </button>
           )}
-          <div>
-            <h1 className="text-[17px] font-semibold text-[#161616]">
-              {currentLevel === 0 && '照片录入中心'}
-              {currentLevel === 1 && '选取项目'}
+          <div className="truncate">
+            <h1 className="text-[16px] font-semibold text-[#161616] truncate">
+              {currentLevel === 0 && '照片录入'}
               {currentLevel === 1.5 && '选取管线'}
-              {currentLevel === 2 && '选择焊口与新增'}
+              {currentLevel === 2 && '选择焊口'}
               {currentLevel === 3 && '工序照片上传'}
             </h1>
-            <span className="text-[11px] text-[#525252] block">
-              当前操作员: {currentUser.display_name || currentUser.username}
+            <span className="text-[11px] text-[#525252] block truncate">
+              {currentUser.display_name || currentUser.username}
             </span>
           </div>
         </div>
 
-        <button
-          onClick={handleLogout}
-          className="text-[#da1e28] text-[13px] hover:underline bg-transparent border-none cursor-pointer outline-none"
-        >
-          退出
-        </button>
+        {/* 顶部搜索框 + 退出按钮 */}
+        <div className="flex items-center space-x-2 relative flex-1 max-w-[240px] justify-end">
+          <div className="relative flex-1 max-w-[170px]">
+            <input
+              type="text"
+              value={pipelineQuery}
+              onChange={handleSearchInputChange}
+              placeholder="🔍 搜索管线号..."
+              className="w-full h-9 px-2.5 bg-white border border-[#c6c6c6] text-[#161616] text-[12px] outline-none focus:border-[#0f62fe] rounded-none placeholder-[#8d8d8d]"
+            />
+            {showSearchResults && (
+              <div className="absolute top-[38px] right-0 w-[240px] border border-[#e0e0e0] bg-white max-h-[220px] overflow-y-auto z-[9999] shadow-lg">
+                {searchResults.length === 0 ? (
+                  <div className="p-3 text-[12px] text-[#8d8d8d] text-center">无匹配管线</div>
+                ) : (
+                  searchResults.map((item) => (
+                    <div
+                      key={item.pipeline_uuid}
+                      onClick={() => handleSelectPipelineUuid(item.pipeline_uuid)}
+                      className="p-2.5 border-b border-[#f4f4f4] last:border-b-0 cursor-pointer hover:bg-[#edf5ff] text-[12px]"
+                    >
+                      <span className="font-mono font-semibold text-[#161616] block">{item.pipeline_no}</span>
+                      <span className="text-[11px] text-[#8d8d8d] block truncate">{item.project_name} | {item.construction_no}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+
+          <button
+            onClick={handleLogout}
+            className="text-[#da1e28] text-[13px] hover:underline bg-transparent border-none cursor-pointer outline-none whitespace-nowrap flex-shrink-0"
+          >
+            退出
+          </button>
+        </div>
       </header>
 
       {/* 面包屑导航指示器 */}
@@ -486,119 +586,57 @@ function UploadContent() {
         </div>
       )}
 
-      {/* 提交成功提示页 */}
-      {showSuccessPage ? (
-        <div className="flex-1 flex flex-col items-center justify-center py-12 text-center bg-white border border-[#e0e0e0] p-6 shadow-none">
-          <span className="text-[64px] text-[#24a148] mb-4">✓</span>
-          <h2 className="text-[20px] font-light text-[#161616] mb-2">三工序录入已成功归档</h2>
-          <p className="text-[13px] text-[#525252] max-w-[320px] leading-relaxed mb-8">
-            管线号 <span className="font-mono font-semibold text-[#161616]">{selectedPipeline}</span> - 焊口号 <span className="font-mono font-semibold text-[#161616]">{selectedWeld}</span> 的组对、打底、盖面三张质量照片已直传云端归档。
-          </p>
-          <button
-            onClick={handleResetForm}
-            className="w-full h-13 bg-[#0f62fe] hover:bg-[#0353e9] text-white text-[15px] font-medium cursor-pointer rounded-none border-none outline-none"
-          >
-            继续录入下一个焊口
-          </button>
-        </div>
-      ) : (
-        <div className="flex-1 flex flex-col justify-between space-y-4">
-          
-          {/* ════════════════ LEVEL 0: 移动端主入口 ════════════════ */}
-          {currentLevel === 0 && (
-            <div className="space-y-5">
-              {/* 主要入口：大触控按键区（52px+ 工业规格） */}
-              <div className="space-y-3">
-                <button
-                  type="button"
-                  onClick={() => setIsQRModalOpen(true)}
-                  className="w-full h-15 bg-[#0f62fe] hover:bg-[#0353e9] active:bg-[#002d9c] text-white text-[16px] font-semibold flex items-center justify-center space-x-2 rounded-none border-none cursor-pointer shadow-none transition-colors duration-150"
-                >
-                  <span className="text-[22px]">📷</span>
-                  <span>扫码定位管线号 (快捷拍照)</span>
-                </button>
+      <div className="flex-1 flex flex-col justify-between space-y-4">
+
+        {/* ════════════════ LEVEL 0: 主入口与合并项目列表 ════════════════ */}
+        {currentLevel === 0 && (
+          <div className="space-y-5">
+            {/* 主要动作：扫码定位管线号大按键 */}
+            <button
+              type="button"
+              onClick={() => setIsQRModalOpen(true)}
+              className="w-full h-15 bg-[#0f62fe] hover:bg-[#0353e9] active:bg-[#002d9c] text-white text-[16px] font-semibold flex items-center justify-center space-x-2 rounded-none border-none cursor-pointer shadow-none transition-colors duration-150"
+            >
+              <span className="text-[22px]">📷</span>
+              <span>扫码定位管线号</span>
+            </button>
+
+            {/* 焦点 Hero 置顶卡片：最近一次打开的项目 */}
+            {recentProject && (
+              <div className="bg-[#edf5ff] border border-[#0f62fe] p-4 rounded-none">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[11px] font-bold text-[#0f62fe] uppercase tracking-wider">最近一次打开的项目</span>
+                  <span className="text-[12px] font-mono text-[#0f62fe] font-semibold">{recentProject.quality_progress}% 完成</span>
+                </div>
+                <h3 className="text-[15px] font-semibold text-[#161616] truncate">
+                  {recentProject.project_name} ({recentProject.construction_no})
+                </h3>
+
+                {/* 进度条 */}
+                <div className="w-full bg-[#c6c6c6] h-2 my-2.5">
+                  <div className="bg-[#0f62fe] h-2 transition-all duration-300" style={{ width: `${recentProject.quality_progress || 0}%` }} />
+                </div>
 
                 <button
                   type="button"
                   onClick={() => {
-                    fetchProjects();
-                    setCurrentLevel(1);
+                    fetchPipelinesOfProject(recentProject.uuid);
+                    setCurrentLevel(1.5);
                   }}
-                  className="w-full h-14 bg-white hover:bg-[#edf5ff] border-2 border-[#0f62fe] text-[#0f62fe] text-[15px] font-semibold flex items-center justify-center space-x-2 rounded-none cursor-pointer transition-colors duration-150"
+                  className="w-full h-11 bg-[#0f62fe] hover:bg-[#0353e9] text-white text-[13px] font-medium cursor-pointer rounded-none border-none outline-none mt-1"
                 >
-                  <span className="text-[20px]">📁</span>
-                  <span>按项目列表选取管线</span>
+                  继续该项目 ➔
                 </button>
               </div>
+            )}
 
-              {/* 焦点 Hero 置顶卡片：最近一次打开的项目 */}
-              {recentProject && (
-                <div className="bg-[#edf5ff] border border-[#0f62fe] p-4 rounded-none">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[11px] font-bold text-[#0f62fe] uppercase tracking-wider">最近一次打开的项目</span>
-                    <span className="text-[12px] font-mono text-[#0f62fe] font-semibold">{recentProject.quality_progress}% 完成</span>
-                  </div>
-                  <h3 className="text-[15px] font-semibold text-[#161616] truncate">
-                    {recentProject.project_name} ({recentProject.construction_no})
-                  </h3>
-                  
-                  {/* 进度条 */}
-                  <div className="w-full bg-[#c6c6c6] h-2 my-2.5">
-                    <div className="bg-[#0f62fe] h-2 transition-all duration-300" style={{ width: `${recentProject.quality_progress || 0}%` }} />
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      fetchPipelinesOfProject(recentProject.uuid);
-                      setCurrentLevel(1.5);
-                    }}
-                    className="w-full h-11 bg-[#0f62fe] hover:bg-[#0353e9] text-white text-[13px] font-medium cursor-pointer rounded-none border-none outline-none mt-1"
-                  >
-                    一键继续该项目 ➔
-                  </button>
-                </div>
-              )}
-
-              {/* 次要备用入口：输入搜索框 */}
-              <div className="bg-white border border-[#e0e0e0] p-4 rounded-none space-y-2">
-                <span className="text-[12px] text-[#525252] block font-medium">🔍 次要入口：按管线号关键字搜索</span>
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={pipelineQuery}
-                    onChange={handleSearchInputChange}
-                    placeholder="输入管线号搜索过滤..."
-                    className="w-full h-12 px-4 bg-white border border-[#c6c6c6] text-[#161616] text-[14px] outline-none focus:border-[#0f62fe] rounded-none placeholder-[#8d8d8d]"
-                  />
-                  {showSearchResults && (
-                    <div className="absolute top-[50px] left-0 right-0 border border-[#e0e0e0] bg-white max-h-[220px] overflow-y-auto z-[9999]">
-                      {searchResults.length === 0 ? (
-                        <div className="p-3 text-[13px] text-[#8d8d8d] text-center">无匹配管线</div>
-                      ) : (
-                        searchResults.map((item) => (
-                          <div
-                            key={item.pipeline_uuid}
-                            onClick={() => handleSelectPipelineUuid(item.pipeline_uuid)}
-                            className="p-3 border-b border-[#f4f4f4] last:border-b-0 cursor-pointer hover:bg-[#edf5ff] text-[13px]"
-                          >
-                            <span className="font-mono font-semibold text-[#161616] block">{item.pipeline_no}</span>
-                            <span className="text-[11px] text-[#8d8d8d] block mt-0.5">{item.project_name} | {item.construction_no}</span>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ════════════════ LEVEL 1: 项目选取列表 ════════════════ */}
-          {currentLevel === 1 && (
+            {/* 直接平铺展示：施工项目列表 */}
             <div className="space-y-3">
-              <span className="text-[12px] text-[#525252] block mb-1">请点击选择要进行工序照片录入的施工项目：</span>
-              
+              <div className="flex items-center justify-between border-b border-[#e0e0e0] pb-2">
+                <h3 className="text-[14px] font-semibold text-[#161616]">📁 施工项目列表</h3>
+                <span className="text-[11px] text-[#525252]">点击选取管线</span>
+              </div>
+
               {loadingProjects ? (
                 <div className="p-8 text-center text-[#525252] font-mono text-[13px] bg-white border border-[#e0e0e0]">
                   加载项目中...
@@ -640,198 +678,216 @@ function UploadContent() {
                 ))
               )}
             </div>
-          )}
+          </div>
+        )}
 
-          {/* ════════════════ LEVEL 1.5: 管线选取列表 ════════════════ */}
-          {currentLevel === 1.5 && (
-            <div className="space-y-3">
-              <div className="bg-[#edf5ff] border border-[#0f62fe] p-3 text-[13px]">
-                <span className="text-[11px] text-[#0f62fe] block">已选项目</span>
-                <span className="font-semibold text-[#161616]">
-                  {selectedProject?.project_name} ({selectedProject?.construction_no})
+        {/* ════════════════ LEVEL 1.5: 管线选取列表 ════════════════ */}
+        {currentLevel === 1.5 && (
+          <div className="space-y-3">
+            <div className="bg-[#edf5ff] border border-[#0f62fe] p-3 text-[13px]">
+              <span className="text-[13px] text-[#0f62fe] block">已选项目</span>
+              <span className="font-semibold text-[#161616]">
+                {selectedProject?.project_name} ({selectedProject?.construction_no})
+              </span>
+            </div>
+
+            <span className="text-[12px] text-[#525252] block">请选择目标管线号：</span>
+
+            {loadingPipelines ? (
+              <div className="p-8 text-center text-[#525252] font-mono text-[18px] bg-white border border-[#e0e0e0]">
+                加载管线列表中...
+              </div>
+            ) : pipelinesList.length === 0 ? (
+              <div className="p-8 text-center text-[#8d8d8d] text-[18px] bg-white border border-[#e0e0e0]">
+                该项目暂未添加管线，请联系管理员
+              </div>
+            ) : (
+              pipelinesList.map((pl) => (
+                <div
+                  key={pl.uuid}
+                  onClick={() => handleSelectPipelineUuid(pl.uuid)}
+                  className="bg-white border border-[#e0e0e0] hover:border-[#0f62fe] p-4 cursor-pointer transition-colors duration-150 flex items-center justify-between min-h-[58px]"
+                >
+                  <div>
+                    <span className="text-[15px] font-mono font-bold text-[#161616] block">{pl.pipeline_no}</span>
+                    <span className="text-[11px] text-[#525252]">
+                      共 {pl.weld_count} 个焊口 / 已归档完工 {pl.completed} 个
+                    </span>
+                  </div>
+
+                  <span className="text-[13px] text-[#0f62fe] font-medium">选择 ➔</span>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+
+        {/* ════════════════ LEVEL 2: 焊口卡片列表与现场新增 ════════════════ */}
+        {currentLevel === 2 && (
+          <div className="space-y-4">
+            {/* 当前定位管线 Banner */}
+            <div className="bg-[#edf5ff] border border-[#0f62fe] p-4 flex items-center justify-between">
+              <div>
+                <span className="text-[11px] text-[#0f62fe] block font-medium">当前定位管线号</span>
+                <span className="text-[18px] font-mono font-bold text-[#161616]">{selectedPipeline}</span>
+                <span className="text-[12px] text-[#525252] block mt-0.5">
+                  {selectedProject?.name || selectedProject?.project_name} ({selectedProject?.constructionNo || selectedProject?.construction_no})
                 </span>
               </div>
+              <button
+                onClick={() => setCurrentLevel(1.5)}
+                className="text-[18px] text-[#0f62fe] hover:underline bg-transparent border-none cursor-pointer outline-none font-medium"
+              >
+                切换管线
+              </button>
+            </div>
 
-              <span className="text-[12px] text-[#525252] block">请选择目标管线号：</span>
+            {/* 现场快捷新增焊口控件 (与 PC 端一致：固定提供输入框与新增动作) */}
+            <div className="bg-white border border-[#e0e0e0] p-4 rounded-none space-y-2">
+              <span className="text-[12px] text-[#525252] block font-medium">💡 未在图纸清单中？在现场快速添加焊口：</span>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newWeldName}
+                  onChange={(e) => setNewWeldName(e.target.value)}
+                  placeholder={
+                    (selectedProject?.weld_prefix || selectedProject?.weldPrefix)
+                      ? `输入焊口号 (留空自动按 ${selectedProject.weld_prefix || selectedProject.weldPrefix}-XX 生成)`
+                      : '输入新焊口编号...'
+                  }
+                  disabled={addingWeld}
+                  className="flex-1 h-12 px-3 bg-white border border-[#c6c6c6] text-[#161616] text-[13px] outline-none focus:border-[#0f62fe] rounded-none placeholder-[#8d8d8d]"
+                />
+                <button
+                  type="button"
+                  disabled={addingWeld}
+                  onClick={handleAddWeldOnsite}
+                  className="h-12 px-5 bg-[#0f62fe] hover:bg-[#0353e9] active:bg-[#002d9c] text-white text-[14px] font-semibold cursor-pointer rounded-none border-none outline-none disabled:bg-[#8d8d8d] whitespace-nowrap flex items-center justify-center"
+                >
+                  {addingWeld ? '新增中...' : '+ 新增焊口'}
+                </button>
+              </div>
+            </div>
 
-              {loadingPipelines ? (
-                <div className="p-8 text-center text-[#525252] font-mono text-[13px] bg-white border border-[#e0e0e0]">
-                  加载管线列表中...
-                </div>
-              ) : pipelinesList.length === 0 ? (
+            {/* 焊口卡片列表 (按智能状态排序：不合格 ➔ 待拍摄 ➔ 已拍摄) */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between pb-1">
+                <span className="text-[13px] font-semibold text-[#161616]">焊口列表 ({weldsList.length})</span>
+              </div>
+
+              {weldsList.length === 0 ? (
                 <div className="p-8 text-center text-[#8d8d8d] text-[13px] bg-white border border-[#e0e0e0]">
-                  该项目暂未添加管线号
+                  该管线暂无焊口记录，可在上方新增
                 </div>
               ) : (
-                pipelinesList.map((pl) => (
+                sortedWeldsList.map((w) => {
+                  const badge = getWeldBadge(w);
+                  return (
+                    <div
+                      key={w.id}
+                      onClick={() => handleSelectWeld(w.weld_no)}
+                      className={`bg-white border p-3.5 cursor-pointer transition-colors duration-150 flex items-center justify-between min-h-[60px]
+                        ${badge.type === 'rejected' ? 'border-[#da1e28] bg-[#fff8f8]' : badge.type === 'completed' ? 'border-[#e0e0e0] opacity-80 hover:opacity-100' : 'border-[#e0e0e0] hover:border-[#0f62fe]'}
+                      `}
+                    >
+                      <div className="flex items-center space-x-3">
+                        <span className="text-[16px] font-mono font-bold text-[#161616]">{w.weld_no}</span>
+                        <span className={`text-[11px] px-2 py-0.5 font-medium rounded-none ${badge.bg} ${badge.text}`}>
+                          {badge.label}
+                        </span>
+                      </div>
+
+                      {/* 三工序工况微缩标识 */}
+                      <div className="flex items-center space-x-1 text-[11px] font-mono text-[#8d8d8d]">
+                        <span className={w.photo_zudui && !w.photo_zudui.startsWith('REJECTED:') ? 'text-[#24a148] font-bold' : w.photo_zudui && w.photo_zudui.startsWith('REJECTED:') ? 'text-[#da1e28] font-bold' : ''}>组对</span>
+                        <span>/</span>
+                        <span className={w.photo_dadi && !w.photo_dadi.startsWith('REJECTED:') ? 'text-[#24a148] font-bold' : w.photo_dadi && w.photo_dadi.startsWith('REJECTED:') ? 'text-[#da1e28] font-bold' : ''}>打底</span>
+                        <span>/</span>
+                        <span className={w.photo_gaimian && !w.photo_gaimian.startsWith('REJECTED:') ? 'text-[#24a148] font-bold' : w.photo_gaimian && w.photo_gaimian.startsWith('REJECTED:') ? 'text-[#da1e28] font-bold' : ''}>盖面</span>
+                        <span className="ml-2 text-[#0f62fe] font-medium">➔</span>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ════════════════ LEVEL 3: 三工序照片上传 ════════════════ */}
+        {currentLevel === 3 && selectedWeld && (
+          <div className="space-y-4">
+            <div className="bg-[#edf5ff] border border-[#0f62fe] p-3 text-[13px]">
+              <span className="text-[11px] text-[#0f62fe] block">正在录入焊口照片</span>
+              <span className="text-[16px] font-mono font-bold text-[#161616]">{selectedPipeline} - {selectedWeld}</span>
+            </div>
+
+            {/* 三工序三列卡片列表 */}
+            <div className="space-y-3">
+              {PHOTO_TYPES.map((type) => {
+                const path = uploadedPhotos[type.id];
+                const msg = statusMsg[type.id];
+                const loadingState = isSubmitting[type.id];
+                const isDone = !!path;
+
+                const activeWeldRecord = weldsList.find((w) => w.weld_no === selectedWeld);
+                const rawPath = activeWeldRecord ? activeWeldRecord[`photo_${type.id}`] : null;
+                const isRejected = rawPath && rawPath.startsWith('REJECTED:');
+
+                return (
                   <div
-                    key={pl.uuid}
-                    onClick={() => handleSelectPipelineUuid(pl.uuid)}
-                    className="bg-white border border-[#e0e0e0] hover:border-[#0f62fe] p-4 cursor-pointer transition-colors duration-150 flex items-center justify-between min-h-[58px]"
+                    key={type.id}
+                    className={`border p-3.5 bg-white rounded-none grid grid-cols-12 items-center gap-2 transition-colors duration-150
+                      ${isDone ? 'border-[#24a148]' : isRejected ? 'border-[#da1e28]' : 'border-[#e0e0e0]'}
+                    `}
                   >
-                    <div>
-                      <span className="text-[15px] font-mono font-bold text-[#161616] block">{pl.pipeline_no}</span>
-                      <span className="text-[11px] text-[#525252]">
-                        共 {pl.weld_count} 个焊口 / 已归档完工 {pl.completed} 个
+                    {/* 最左列: 工序名称和状态 */}
+                    <div className="col-span-4 min-w-0 pr-1">
+                      <span className="text-[15px] font-bold text-[#161616] block truncate">{type.name}</span>
+                      <span
+                        className={`text-[12px] block mt-1 font-mono font-medium
+                          ${isDone
+                            ? 'text-[#24a148]'
+                            : isRejected
+                              ? 'text-[#da1e28] animate-pulse font-semibold'
+                              : loadingState
+                                ? 'text-[#0f62fe]'
+                                : 'text-[#8d8d8d]'
+                          }
+                        `}
+                      >
+                        状态: {msg}
                       </span>
                     </div>
 
-                    <span className="text-[13px] text-[#0f62fe] font-medium">选择 ➔</span>
-                  </div>
-                ))
-              )}
-            </div>
-          )}
-
-          {/* ════════════════ LEVEL 2: 焊口选择与现场新增 ════════════════ */}
-          {currentLevel === 2 && (
-            <div className="space-y-4">
-              <div className="bg-[#edf5ff] border border-[#0f62fe] p-4 flex items-center justify-between">
-                <div>
-                  <span className="text-[11px] text-[#0f62fe] block">当前定位管线号</span>
-                  <span className="text-[17px] font-mono font-bold text-[#161616]">{selectedPipeline}</span>
-                  <span className="text-[12px] text-[#525252] block mt-0.5">
-                    {selectedProject?.name || selectedProject?.project_name} ({selectedProject?.constructionNo || selectedProject?.construction_no})
-                  </span>
-                </div>
-                <button
-                  onClick={() => setCurrentLevel(1.5)}
-                  className="text-[13px] text-[#0f62fe] hover:underline bg-transparent border-none cursor-pointer outline-none"
-                >
-                  切换管线
-                </button>
-              </div>
-
-              {/* 焊口选择列表 (52px 触控下拉框与卡片) */}
-              <div className="bg-white border border-[#e0e0e0] p-4 space-y-4">
-                <span className="text-[13px] text-[#525252] font-semibold block">选择已有焊口号：</span>
-                <select
-                  value={selectedWeld}
-                  onChange={(e) => handleSelectWeld(e.target.value)}
-                  className="w-full h-13 px-4 bg-white border border-[#c6c6c6] text-[#161616] text-[15px] outline-none focus:border-[#0f62fe] rounded-none cursor-pointer"
-                >
-                  <option value="">-- 请选择焊口号进入拍照 --</option>
-                  {weldsList.map((w) => {
-                    const isAllDone =
-                      w.photo_zudui && !w.photo_zudui.startsWith('REJECTED:') &&
-                      w.photo_dadi && !w.photo_dadi.startsWith('REJECTED:') &&
-                      w.photo_gaimian && !w.photo_gaimian.startsWith('REJECTED:');
-                    return (
-                      <option key={w.id} value={w.weld_no} disabled={isAllDone}>
-                        {w.weld_no} {isAllDone ? '(已完工归档)' : ''}
-                      </option>
-                    );
-                  })}
-                </select>
-
-                {/* 现场新增焊口控件 */}
-                <div className="border-t border-[#f4f4f4] pt-4 space-y-2">
-                  <span className="text-[12px] text-[#525252] block">💡 未在图纸清单中？在现场快速新增焊口：</span>
-                  
-                  {(selectedProject?.weld_prefix || selectedProject?.weldPrefix) ? (
-                    <button
-                      type="button"
-                      disabled={addingWeld}
-                      onClick={handleAddWeldOnsite}
-                      className="w-full h-12 border-2 border-[#0f62fe] bg-white hover:bg-[#edf5ff] text-[#0f62fe] text-[14px] font-semibold cursor-pointer rounded-none outline-none disabled:bg-[#f4f4f4] disabled:text-[#8d8d8d]"
-                    >
-                      {addingWeld ? '正在生成编号...' : `+ 自动生成新焊口 (${selectedProject.weld_prefix || selectedProject.weldPrefix}-XX)`}
-                    </button>
-                  ) : (
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={newWeldName}
-                        onChange={(e) => setNewWeldName(e.target.value)}
-                        placeholder="输入新焊口编号..."
-                        disabled={addingWeld}
-                        className="flex-1 h-12 px-3 bg-white border border-[#c6c6c6] text-[#161616] text-[14px] outline-none focus:border-[#0f62fe] rounded-none"
-                      />
-                      <button
-                        type="button"
-                        disabled={addingWeld}
-                        onClick={handleAddWeldOnsite}
-                        className="h-12 px-5 bg-[#393939] hover:bg-[#4c4c4c] text-white text-[13px] font-medium cursor-pointer rounded-none border-none outline-none disabled:bg-[#8d8d8d]"
-                      >
-                        {addingWeld ? '新增中...' : '确认新增'}
-                      </button>
+                    {/* 中间列: 预览照片 */}
+                    <div className="col-span-4 flex items-center justify-center">
+                      {isDone ? (
+                        <div className="w-24 h-20 bg-[#f4f4f4] border border-[#e0e0e0] flex items-center justify-center overflow-hidden">
+                          <img
+                            src={`/api/photo/preview?path=${encodeURIComponent(path)}`}
+                            alt={type.label}
+                            className="max-w-full max-h-full object-contain"
+                          />
+                        </div>
+                      ) : isRejected ? (
+                        <div className="w-24 h-20 bg-[#f4f4f4] border border-[#da1e28] flex flex-col items-center justify-center overflow-hidden relative">
+                          <img
+                            src={`/api/photo/preview?path=${encodeURIComponent(rawPath)}`}
+                            alt="不合格预览"
+                            className="max-w-full max-h-full object-contain"
+                          />
+                          <span className="absolute bottom-0 inset-x-0 bg-[#da1e28]/90 text-white text-[9px] text-center py-0.5">不合格原图</span>
+                        </div>
+                      ) : (
+                        <div className="w-24 h-20 bg-[#f9f9f9] border border-dashed border-[#d0d0d0] flex flex-col items-center justify-center text-[#8d8d8d] text-[11px]">
+                          <span>暂无照片</span>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
 
-          {/* ════════════════ LEVEL 3: 三工序拍照上传 ════════════════ */}
-          {currentLevel === 3 && selectedWeld && (
-            <div className="space-y-4">
-              <div className="bg-[#edf5ff] border border-[#0f62fe] p-3 text-[13px]">
-                <span className="text-[11px] text-[#0f62fe] block">正在录入照片焊口</span>
-                <span className="text-[16px] font-mono font-bold text-[#161616]">{selectedPipeline} - {selectedWeld}</span>
-              </div>
-
-              <div className="space-y-4">
-                {PHOTO_TYPES.map((type) => {
-                  const path = uploadedPhotos[type.id];
-                  const msg = statusMsg[type.id];
-                  const loadingState = isSubmitting[type.id];
-                  const isDone = !!path;
-
-                  const activeWeldRecord = weldsList.find((w) => w.weld_no === selectedWeld);
-                  const rawPath = activeWeldRecord ? activeWeldRecord[`photo_${type.id}`] : null;
-                  const isRejected = rawPath && rawPath.startsWith('REJECTED:');
-
-                  return (
-                    <div
-                      key={type.id}
-                      className={`border p-4 bg-white rounded-none flex items-center justify-between transition-colors duration-150
-                        ${isDone ? 'border-[#24a148]' : isRejected ? 'border-[#da1e28]' : 'border-[#e0e0e0]'}
-                      `}
-                    >
-                      <div className="flex-1 min-w-0 mr-3">
-                        <span className="text-[15px] font-semibold text-[#161616] block">{type.name}</span>
-                        <span
-                          className={`text-[12px] block mt-1 font-mono
-                            ${
-                              isDone
-                                ? 'text-[#24a148] font-semibold'
-                                : isRejected
-                                ? 'text-[#da1e28] font-semibold animate-pulse'
-                                : loadingState
-                                ? 'text-[#0f62fe] font-medium'
-                                : 'text-[#8d8d8d]'
-                            }
-                          `}
-                        >
-                          状态: {msg}
-                        </span>
-
-                        {/* 成功预览 */}
-                        {isDone && (
-                          <div className="mt-3 w-32 h-24 bg-[#f4f4f4] border border-[#e0e0e0] flex items-center justify-center">
-                            <img
-                              src={`/api/photo/preview?path=${encodeURIComponent(path)}`}
-                              alt={type.label}
-                              className="max-w-full max-h-full object-contain"
-                            />
-                          </div>
-                        )}
-
-                        {/* 被驳回警告预览 */}
-                        {isRejected && !isDone && (
-                          <div className="mt-3">
-                            <span className="text-[11px] text-[#da1e28] block mb-1">⚠️ 该工序不合格需重传，被驳回原图：</span>
-                            <div className="w-32 h-24 bg-[#f4f4f4] border border-[#da1e28] flex items-center justify-center">
-                              <img
-                                src={`/api/photo/preview?path=${encodeURIComponent(rawPath)}`}
-                                alt="不合格预览"
-                                className="max-w-full max-h-full object-contain"
-                              />
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
+                    {/* 最右列: 拍照和重新拍照按钮 */}
+                    <div className="col-span-4 flex justify-end">
                       <input
                         type="file"
                         ref={fileInputRefs[type.id]}
@@ -845,40 +901,58 @@ function UploadContent() {
                         type="button"
                         onClick={() => triggerCapture(type.id)}
                         disabled={loadingState}
-                        className={`h-13 px-4 text-[13px] font-semibold cursor-pointer rounded-none outline-none border transition-colors duration-150 flex items-center justify-center
-                          ${
-                            isDone
-                              ? 'border-[#c6c6c6] bg-white hover:bg-[#f4f4f4] text-[#161616]'
-                              : isRejected
+                        className={`h-12 px-3 text-[14px] font-semibold cursor-pointer rounded-none outline-none border transition-colors duration-150 flex items-center justify-center whitespace-nowrap w-full max-w-[110px]
+                          ${isDone
+                            ? 'border-[#c6c6c6] bg-white hover:bg-[#f4f4f4] text-[#161616]'
+                            : isRejected
                               ? 'border-transparent bg-[#da1e28] hover:bg-[#b21922] text-white'
                               : 'border-transparent bg-[#0f62fe] hover:bg-[#0353e9] text-white'
                           }
                           disabled:bg-[#8d8d8d] disabled:cursor-not-allowed
                         `}
                       >
-                        {isDone ? '重新拍照' : isRejected ? '重传照片' : '📷 拍照上传'}
+                        {isDone ? '重新拍照' : isRejected ? '重传照片' : '📷 拍照'}
                       </button>
                     </div>
-                  );
-                })}
-              </div>
-
-              {/* 提交完成控制台 */}
-              <div className="pt-4">
-                <button
-                  type="button"
-                  onClick={handleSubmitAll}
-                  disabled={!allPhotosUploaded}
-                  className="w-full h-14 bg-[#0f62fe] hover:bg-[#0353e9] active:bg-[#002d9c] text-white text-[15px] font-semibold transition-colors duration-150 rounded-none border-none outline-none disabled:bg-[#8d8d8d] disabled:cursor-not-allowed cursor-pointer"
-                >
-                  {allPhotosUploaded ? '✓ 确认并完成此焊口提交' : '请先完成组对、打底、盖面三道工序拍照'}
-                </button>
-              </div>
+                  </div>
+                );
+              })}
             </div>
-          )}
 
-        </div>
-      )}
+            {/* 底部焊口前后顺序导览按钮 (替代原来的提交控制台) */}
+            <div className="pt-4 flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={handlePrevWeld}
+                disabled={!hasPrevWeld}
+                className={`flex-1 h-13 text-[14px] font-semibold rounded-none border-none outline-none transition-colors duration-150 flex items-center justify-center
+                  ${hasPrevWeld
+                    ? 'bg-[#393939] hover:bg-[#4c4c4c] text-white cursor-pointer'
+                    : 'bg-[#e0e0e0] text-[#8d8d8d] cursor-not-allowed'
+                  }
+                `}
+              >
+                {hasPrevWeld ? '‹ 上一个焊口' : '已是第一个焊口'}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleNextWeld}
+                disabled={!hasNextWeld}
+                className={`flex-1 h-13 text-[14px] font-semibold rounded-none border-none outline-none transition-colors duration-150 flex items-center justify-center
+                  ${hasNextWeld
+                    ? 'bg-[#0f62fe] hover:bg-[#0353e9] active:bg-[#002d9c] text-white cursor-pointer'
+                    : 'bg-[#e0e0e0] text-[#8d8d8d] cursor-not-allowed'
+                  }
+                `}
+              >
+                {hasNextWeld ? '下一个焊口 ›' : '已是最后一个焊口'}
+              </button>
+            </div>
+          </div>
+        )}
+
+      </div>
 
       {/* 实时扫码 Modal */}
       <QRScannerModal
