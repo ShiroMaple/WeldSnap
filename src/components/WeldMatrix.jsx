@@ -17,7 +17,7 @@ import { saveAs } from 'file-saver';
 
 export default function WeldMatrix({
   records = [],
-  onRefresh = () => {},
+  onRefresh = () => { },
   currentUser = {},
   pipelineUuid = '',
   projectInfo = { pipeline_prefix: '', weld_prefix: '', construction_no: '', project_name: '' },
@@ -50,12 +50,14 @@ export default function WeldMatrix({
   const [editingUuid, setEditingUuid] = useState('');
   const [editingValue, setEditingValue] = useState('');
   const [editingSaving, setEditingSaving] = useState(false);
+  const [sortKey, setSortKey] = useState('weld_no'); // 'weld_no' | 'uploaded_at'
   const [sortDirection, setSortDirection] = useState(null); // null | 'asc' | 'desc'
 
   // 自动重置选择、编辑与排序
   useEffect(() => {
     setSelectedUuids([]);
     setSortDirection(null);
+    setSortKey('weld_no');
     setEditingUuid('');
     setEditingValue('');
   }, [records]);
@@ -100,21 +102,39 @@ export default function WeldMatrix({
     setEditingValue('');
   };
 
-  const toggleSort = () => {
-    setSortDirection((prev) => {
-      if (prev === null) return 'asc';
-      if (prev === 'asc') return 'desc';
-      return null;
-    });
+  const toggleSort = (key) => {
+    if (sortKey !== key) {
+      setSortKey(key);
+      setSortDirection('asc');
+    } else {
+      setSortDirection((prev) => {
+        if (prev === null) return 'asc';
+        if (prev === 'asc') return 'desc';
+        return null;
+      });
+    }
   };
 
-  // 计算自然排序后的焊口列表 (支持 W-2 排在 W-10 前面)
+  // 计算自然排序后的焊口列表 (支持自然排序与上传时间排序)
   const sortedRecords = sortDirection
     ? [...records].sort((a, b) => {
-        const valA = a.weld_no || '';
-        const valB = b.weld_no || '';
-        const compareResult = valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
-        return sortDirection === 'asc' ? compareResult : -compareResult;
+        if (sortKey === 'uploaded_at') {
+          const valA = a.uploaded_at || '';
+          const valB = b.uploaded_at || '';
+          // 比较字符串时间 (空值往后排)
+          if (!valA && valB) return 1;
+          if (valA && !valB) return -1;
+          if (!valA && !valB) return 0;
+          return sortDirection === 'asc'
+            ? valA.localeCompare(valB)
+            : valB.localeCompare(valA);
+        } else {
+          // weld_no 自然排序 (支持 W-2 排在 W-10 前面)
+          const valA = a.weld_no || '';
+          const valB = b.weld_no || '';
+          const compareResult = valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
+          return sortDirection === 'asc' ? compareResult : -compareResult;
+        }
       })
     : records;
 
@@ -149,7 +169,7 @@ export default function WeldMatrix({
   // 标记为不合格
   const handleRejectPhoto = async () => {
     if (!viewPhotoInfo.typeKey) return;
-    
+
     // 找出该焊口在 records 中的真实 UUID
     const targetWeld = records.find(r => r.weld_no === viewPhotoInfo.weldNo);
     if (!targetWeld) return;
@@ -440,30 +460,30 @@ export default function WeldMatrix({
 
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-white relative">
-      
+
       {/* 快捷批量下载、批量删除与控制台新增焊口条 (固定高度 h-[76px] 且为两行排版，以实现与左侧完美的对称对齐) */}
       <div className="h-[76px] px-4 py-2.5 border-b border-[#e0e0e0] bg-[#f4f4f4] flex flex-col justify-between select-none">
-        
+
         {/* 第一行：添加焊口与批量操作按钮 */}
         <div className="flex justify-between items-center w-full">
           {/* 1. 添加焊口 */}
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                value={newWeldName}
-                onChange={(e) => setNewWeldName(e.target.value)}
-                placeholder={projectInfo.weld_prefix ? "自定义焊口号 (选填)..." : "输入新增焊口号..."}
-                disabled={addingWeld}
-                className="h-8 px-3 bg-white border border-[#c6c6c6] text-[12px] outline-none focus:border-[#0f62fe] rounded-none w-44 placeholder-[#8d8d8d] font-sans"
-              />
-              <button
-                onClick={handleAddWeld}
-                disabled={addingWeld}
-                className="h-8 px-4 bg-[#0f62fe] hover:bg-[#0353e9] text-white text-[12px] font-medium cursor-pointer rounded-none border-none outline-none"
-              >
-                {addingWeld ? '添加中...' : `+ 添加焊口`}
-              </button>
-            </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={newWeldName}
+              onChange={(e) => setNewWeldName(e.target.value)}
+              placeholder={projectInfo.weld_prefix ? "自定义焊口号" : "输入新增焊口号"}
+              disabled={addingWeld}
+              className="h-8 px-3 bg-white border border-[#c6c6c6] text-[12px] outline-none focus:border-[#0f62fe] rounded-none w-44 placeholder-[#8d8d8d] font-sans"
+            />
+            <button
+              onClick={handleAddWeld}
+              disabled={addingWeld}
+              className="h-8 px-4 bg-[#0f62fe] hover:bg-[#0353e9] text-white text-[12px] font-medium cursor-pointer rounded-none border-none outline-none"
+            >
+              {addingWeld ? '添加中...' : `+ 添加焊口`}
+            </button>
+          </div>
 
           {/* 2. 批量操作按钮 */}
           <div className="flex items-center gap-2">
@@ -517,13 +537,13 @@ export default function WeldMatrix({
                   </th>
                   <th
                     id="weld-no-header"
-                    onClick={toggleSort}
+                    onClick={() => toggleSort('weld_no')}
                     className="pb-3 px-4 font-medium cursor-pointer hover:bg-[#e8e8e8]/60 transition-colors select-none"
                   >
                     <div className="flex items-center gap-1.5">
                       <span>焊口号</span>
                       <span className="text-[11px] font-mono text-[#525252]">
-                        {sortDirection === 'asc' ? '▲' : sortDirection === 'desc' ? '▼' : '⇅'}
+                        {sortKey === 'weld_no' && sortDirection === 'asc' ? '▲' : sortKey === 'weld_no' && sortDirection === 'desc' ? '▼' : '⇅'}
                       </span>
                     </div>
                   </th>
@@ -531,7 +551,18 @@ export default function WeldMatrix({
                   <th className="pb-3 px-4 font-medium">打底工序</th>
                   <th className="pb-3 px-4 font-medium">盖面工序</th>
                   <th className="pb-3 px-4 font-medium">最近上传人</th>
-                  <th className="pb-3 pl-4 font-medium">最近上传时间</th>
+                  <th
+                    id="weld-upload-time-header"
+                    onClick={() => toggleSort('uploaded_at')}
+                    className="pb-3 pl-4 font-medium cursor-pointer hover:bg-[#e8e8e8]/60 transition-colors select-none"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>最近上传时间</span>
+                      <span className="text-[11px] font-mono text-[#525252]">
+                        {sortKey === 'uploaded_at' && sortDirection === 'asc' ? '▲' : sortKey === 'uploaded_at' && sortDirection === 'desc' ? '▼' : '⇅'}
+                      </span>
+                    </div>
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#e0e0e0] text-[#161616]">
@@ -682,7 +713,7 @@ export default function WeldMatrix({
       {viewPhotoPath && (
         <div className="fixed inset-0 bg-black/75 z-[99999] flex flex-col items-center justify-center p-4">
           <div className="w-full max-w-[800px] bg-white border border-[#e0e0e0] flex flex-col rounded-none shadow-none">
-            
+
             {/* Modal Header */}
             <div className="flex justify-between items-center px-6 py-4 border-b border-[#e0e0e0] select-none">
               <div>
@@ -723,7 +754,7 @@ export default function WeldMatrix({
                   标记不合格 (需重传)
                 </button>
               )}
-              
+
               {viewPhotoPath.startsWith('REJECTED:') && (
                 <button
                   onClick={() => {

@@ -546,7 +546,7 @@ export default function AdminPage() {
                   <div>
                     <h2 className="text-[22px] font-light text-[#161616]">项目控制台</h2>
                     <p className="text-[13px] text-[#525252] mt-1">
-                      从项目开始管理，您可以在此管理所有的工程项目和施工号，并设定管线/焊口号的自增生成前缀。
+                      从项目开始管理，您可以在此编辑所有的工程项目和施工号，并设定管线/焊口号的自增生成前缀。
                     </p>
                   </div>
                   <button
