@@ -59,37 +59,50 @@ const baseOptions = {
   timestamp: pino.stdTimeFunctions.isoTime,
 };
 
-// ─── 环境分发 ────────────────────────────────────────────
-let logger;
+// ─── 环境分发与多目标 Transport ───────────────────────────
+const targets = [];
 
 if (isDev) {
-  // 开发环境：彩色可读输出
-  logger = pino({
-    ...baseOptions,
-    transport: {
-      target: 'pino-pretty',
-      options: {
-        colorize: true,
-        translateTime: 'SYS:HH:MM:ss.l',
-        ignore: 'pid,hostname',
-      },
-    },
-  });
-} else {
-  // 生产环境：JSON 日志 → 文件，按天轮转，单文件 10MB 上限
-  logger = pino({
-    ...baseOptions,
-    transport: {
-      target: 'pino-roll',
-      options: {
-        file: 'logs/weldsnap-run.log',
-        frequency: 'daily',
-        limit: { count: 30 },
-        size: '10m',
-        mkdir: true,
-      },
+  // 开发模式下在终端显示彩色日志
+  targets.push({
+    target: 'pino-pretty',
+    options: {
+      colorize: true,
+      translateTime: 'SYS:HH:MM:ss.l',
+      ignore: 'pid,hostname',
     },
   });
 }
 
-module.exports = { logger };
+// 统一保存 NDJSON JSON 行日志文件用于“系统日志”前端分析与轮转导出
+targets.push({
+  target: 'pino-roll',
+  options: {
+    file: 'logs/weldsnap-run.log',
+    frequency: 'daily',
+    limit: { count: 30 },
+    size: '10m',
+    mkdir: true,
+  },
+});
+
+const logger = pino({
+  ...baseOptions,
+  transport: { targets },
+});
+
+// ─── 动态日志级别控制 ────────────────────────────────────
+function setLogLevel(newLevel) {
+  const VALID_LEVELS = ['trace', 'debug', 'info', 'warn', 'error', 'fatal'];
+  if (VALID_LEVELS.includes(newLevel)) {
+    logger.level = newLevel;
+    return true;
+  }
+  return false;
+}
+
+function getLogLevel() {
+  return logger.level;
+}
+
+module.exports = { logger, setLogLevel, getLogLevel };

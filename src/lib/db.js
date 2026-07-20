@@ -738,6 +738,7 @@ const DEFAULT_SETTINGS = {
   compress_max_height: '1080',
   compress_quality: '0.8',
   server_public_url: '',
+  log_level: 'info',
 };
 
 function getSetting(key) {

@@ -16,6 +16,7 @@ import { useState, useEffect } from 'react';
 import StatsBar from '@/components/StatsBar';
 import PipelineTree from '@/components/PipelineTree';
 import WeldMatrix from '@/components/WeldMatrix';
+import LogViewer from '@/components/LogViewer';
 
 export default function AdminPage() {
   const [activeTab, setActiveTab] = useState('dashboard'); // dashboard, users, settings
@@ -252,6 +253,18 @@ export default function AdminPage() {
       setWeldRecords([]);
     }
   }, [selectedPipelineUuid, filterWeld, filterStatus]);
+
+  // ─── 默认 60s 自动刷新定时轮询 ─────────────────────────
+  useEffect(() => {
+    if (!selectedPipelineUuid) return;
+
+    const timer = setInterval(() => {
+      fetchRecords(selectedPipelineUuid);
+      fetchStats(selectedProjectUuid);
+    }, 60000);
+
+    return () => clearInterval(timer);
+  }, [selectedPipelineUuid, selectedProjectUuid]);
 
   // ─── 项目增删改操作 ──────────────────────────────────────
   const handleSelectProject = (project) => {
@@ -561,6 +574,7 @@ export default function AdminPage() {
           { id: 'dashboard', name: '管道焊口总览' },
           ...(currentUser?.role === 'admin' ? [
             { id: 'users', name: '成员管理' },
+            { id: 'logs', name: '系统日志' },
             { id: 'settings', name: '系统设置' },
           ] : []),
         ].map((tab) => (
@@ -783,43 +797,67 @@ export default function AdminPage() {
                   <div className="flex-1 flex flex-col min-h-0 bg-white border-l border-[#e0e0e0]">
 
                     {/* 焊口过滤检索区 (统一高度为 h-16) */}
-                    <div className="h-16 px-4 border-b border-[#e0e0e0] bg-[#f4f4f4] flex gap-4 items-center select-none">
+                    <div className="h-16 px-4 border-b border-[#e0e0e0] bg-[#f4f4f4] flex items-center justify-between select-none">
                       {selectedPipelineUuid ? (
                         <>
-                          <div className="flex items-center gap-2">
-                            <span className="text-[12px] text-[#525252] font-medium">焊口筛选:</span>
-                            <input
-                              type="text"
-                              value={filterWeld}
-                              onChange={(e) => setFilterWeld(e.target.value)}
-                              placeholder="关键字..."
-                              className="h-8 px-2 bg-white border border-[#c6c6c6] text-[13px] text-[#161616] outline-none focus:border-[#0f62fe] rounded-none placeholder-[#8d8d8d] w-32"
-                            />
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-[12px] text-[#525252] font-medium">工序状态:</span>
-                            <select
-                              value={filterStatus}
-                              onChange={(e) => setFilterStatus(e.target.value)}
-                              className="h-8 px-2 bg-white border border-[#c6c6c6] text-[13px] text-[#161616] outline-none focus:border-[#0f62fe] rounded-none cursor-pointer"
+                          <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[12px] text-[#525252] font-medium">焊口筛选:</span>
+                              <input
+                                type="text"
+                                value={filterWeld}
+                                onChange={(e) => setFilterWeld(e.target.value)}
+                                placeholder="关键字..."
+                                className="h-8 px-2 bg-white border border-[#c6c6c6] text-[13px] text-[#161616] outline-none focus:border-[#0f62fe] rounded-none placeholder-[#8d8d8d] w-32"
+                              />
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[12px] text-[#525252] font-medium">工序状态:</span>
+                              <select
+                                value={filterStatus}
+                                onChange={(e) => setFilterStatus(e.target.value)}
+                                className="h-8 px-2 bg-white border border-[#c6c6c6] text-[13px] text-[#161616] outline-none focus:border-[#0f62fe] rounded-none cursor-pointer"
+                              >
+                                <option value="">全部</option>
+                                <option value="completed">已完成</option>
+                                <option value="pending">待录入</option>
+                              </select>
+                            </div>
+                            <button
+                              onClick={() => {
+                                setFilterWeld('');
+                                setFilterStatus('');
+                              }}
+                              className="h-8 px-3 border border-[#c6c6c6] bg-white hover:bg-[#e8e8e8] text-[12px] text-[#161616] cursor-pointer rounded-none font-medium"
                             >
-                              <option value="">全部</option>
-                              <option value="completed">已完成</option>
-                              <option value="pending">待录入</option>
-                            </select>
+                              重置
+                            </button>
                           </div>
+
                           <button
                             onClick={() => {
-                              setFilterWeld('');
-                              setFilterStatus('');
+                              fetchRecords(selectedPipelineUuid);
+                              fetchStats(selectedProjectUuid);
                             }}
-                            className="h-8 px-4 border border-[#c6c6c6] bg-white hover:bg-[#e8e8e8] text-[12px] text-[#161616] cursor-pointer rounded-none font-medium"
+                            className="h-8 px-3 border border-[#0f62fe] bg-white hover:bg-[#edf5ff] text-[#0f62fe] text-[12px] cursor-pointer rounded-none font-medium flex items-center gap-1"
                           >
-                            重置筛选
+                            <span>🔄 刷新数据</span>
                           </button>
                         </>
                       ) : (
-                        <span className="text-[12px] text-[#8d8d8d] font-mono">请从左侧选择管线号查看焊口进度</span>
+                        <div className="flex justify-between items-center w-full">
+                          <span className="text-[12px] text-[#8d8d8d] font-mono">请从左侧选择管线号查看焊口进度</span>
+                          <button
+                            onClick={() => {
+                              fetchProjects();
+                              fetchStats(selectedProjectUuid);
+                              if (selectedProjectUuid) fetchPipelines(selectedProjectUuid);
+                            }}
+                            className="h-8 px-3 border border-[#0f62fe] bg-white hover:bg-[#edf5ff] text-[#0f62fe] text-[12px] cursor-pointer rounded-none font-medium flex items-center gap-1"
+                          >
+                            <span>🔄 刷新大盘</span>
+                          </button>
+                        </div>
                       )}
                     </div>
 
@@ -924,6 +962,11 @@ export default function AdminPage() {
               </div>
             </div>
           </div>
+        )}
+
+        {/* Panel: 系统日志 */}
+        {activeTab === 'logs' && currentUser?.role === 'admin' && (
+          <LogViewer />
         )}
 
         {/* Panel: 系统设置 */}
