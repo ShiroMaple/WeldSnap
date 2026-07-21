@@ -57,7 +57,12 @@ export default function AdminLayout({ children }) {
     <div className="min-h-screen flex flex-col bg-white">
       {/* 顶层 Masthead 导航栏 (IBM Carbon style: #161616, 48px height) */}
       <header className="h-12 bg-[#161616] text-[#ffffff] px-6 flex items-center justify-between select-none">
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
+          <img
+            src="/logo_zpje.jpg"
+            alt="Logo"
+            className="h-7 w-auto object-contain bg-white p-0.5 rounded-none border border-white/20"
+          />
           <span className="font-semibold text-[16px] tracking-[0.16px]">建安管线焊口工序质量记录 WeldSnap</span>
           <span className="h-4 w-[1px] bg-[#393939]" />
           <span className="text-[14px] text-[#c6c6c6] font-light">管理控制台</span>

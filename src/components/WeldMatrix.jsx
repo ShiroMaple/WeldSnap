@@ -17,6 +17,9 @@ import { saveAs } from 'file-saver';
 
 export default function WeldMatrix({
   records = [],
+  uploadStartDate = '',
+  uploadEndDate = '',
+  is24hActive = false,
   onRefresh = () => { },
   onBusyChange = () => { },
   currentUser = {},
@@ -130,28 +133,69 @@ export default function WeldMatrix({
     }
   };
 
-  // 计算自然排序后的焊口列表 (支持自然排序与上传时间排序)
-  const sortedRecords = sortDirection
-    ? [...records].sort((a, b) => {
-      if (sortKey === 'uploaded_at') {
-        const valA = a.uploaded_at || '';
-        const valB = b.uploaded_at || '';
-        // 比较字符串时间 (空值往后排)
-        if (!valA && valB) return 1;
-        if (valA && !valB) return -1;
-        if (!valA && !valB) return 0;
-        return sortDirection === 'asc'
-          ? valA.localeCompare(valB)
-          : valB.localeCompare(valA);
-      } else {
-        // weld_no 自然排序 (支持 W-2 排在 W-10 前面)
-        const valA = a.weld_no || '';
-        const valB = b.weld_no || '';
-        const compareResult = valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
-        return sortDirection === 'asc' ? compareResult : -compareResult;
+  // 焊口号自然排序比较算法 (纯数字按数值且优先于文本，11绝不会排在2之前)
+  const compareWeldNo = (noA, noB) => {
+    const valA = (noA || '').trim();
+    const valB = (noB || '').trim();
+
+    const isNumA = /^\d+$/.test(valA);
+    const isNumB = /^\d+$/.test(valB);
+
+    if (isNumA && isNumB) {
+      return Number(valA) - Number(valB);
+    } else if (isNumA && !isNumB) {
+      return -1; // 纯数字优先
+    } else if (!isNumA && isNumB) {
+      return 1;  // 纯数字优先
+    } else {
+      return valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
+    }
+  };
+
+  // 1. 根据上传时间段筛选焊口列表
+  const filteredRecords = records.filter((r) => {
+    if (!uploadStartDate && !uploadEndDate && !is24hActive) return true;
+    if (!r.uploaded_at) return false;
+
+    const itemTime = new Date(r.uploaded_at.replace(' ', 'T')).getTime();
+    if (isNaN(itemTime)) return true;
+
+    if (is24hActive) {
+      const twentyFourHoursAgo = Date.now() - 24 * 3600 * 1000;
+      if (itemTime < twentyFourHoursAgo) return false;
+    }
+
+    if (uploadStartDate) {
+      const startMs = new Date(uploadStartDate).getTime();
+      if (!isNaN(startMs) && itemTime < startMs) return false;
+    }
+
+    if (uploadEndDate) {
+      let endMs = new Date(uploadEndDate).getTime();
+      if (uploadEndDate.length === 10) {
+        endMs = new Date(`${uploadEndDate}T23:59:59`).getTime();
       }
-    })
-    : records;
+      if (!isNaN(endMs) && itemTime > endMs) return false;
+    }
+
+    return true;
+  });
+
+  // 2. 计算排序后的焊口列表 (默认及按焊口号排序均采用数值优先自然排序)
+  const sortedRecords = [...filteredRecords].sort((a, b) => {
+    if (sortKey === 'uploaded_at') {
+      const valA = a.uploaded_at || '';
+      const valB = b.uploaded_at || '';
+      if (!valA && valB) return 1;
+      if (valA && !valB) return -1;
+      if (!valA && !valB) return 0;
+      const cmp = valA.localeCompare(valB);
+      return sortDirection === 'desc' ? -cmp : cmp;
+    } else {
+      const cmp = compareWeldNo(a.weld_no, b.weld_no);
+      return sortDirection === 'desc' ? -cmp : cmp;
+    }
+  });
 
   const handleMouseEnter = (photoPath, event) => {
     if (!photoPath) return;
@@ -571,14 +615,19 @@ export default function WeldMatrix({
 
         {/* 第二行：批量选择选项与数量指示 */}
         <div className="flex justify-between items-center w-full text-[11px] text-[#525252]">
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
             <button onClick={handleSelectAll} className="hover:underline cursor-pointer">全选</button>
             <span>/</span>
             <button onClick={handleDeselectAll} className="hover:underline cursor-pointer">清空</button>
             <span>/</span>
             <button onClick={handleInvertSelect} className="hover:underline cursor-pointer">反选</button>
           </div>
-          <span className="text-[12px] text-[#525252]">共 {records.length} 个焊口</span>
+
+          <span className="text-[12px] text-[#525252]">
+            {(uploadStartDate || uploadEndDate || is24hActive)
+              ? `筛选共 ${sortedRecords.length} / ${records.length} 个焊口`
+              : `共 ${records.length} 个焊口`}
+          </span>
         </div>
       </div>
 

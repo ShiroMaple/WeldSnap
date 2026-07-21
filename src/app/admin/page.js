@@ -17,6 +17,18 @@ import StatsBar from '@/components/StatsBar';
 import PipelineTree from '@/components/PipelineTree';
 import WeldMatrix from '@/components/WeldMatrix';
 import LogViewer from '@/components/LogViewer';
+import { addLogoToQRCode } from '@/lib/qrLogo';
+
+function formatDatetimeLocal(date) {
+  const pad = (n) => String(n).padStart(2, '0');
+  const yyyy = date.getFullYear();
+  const mm = pad(date.getMonth() + 1);
+  const dd = pad(date.getDate());
+  const hh = pad(date.getHours());
+  const min = pad(date.getMinutes());
+  const ss = pad(date.getSeconds());
+  return `${yyyy}-${mm}-${dd}T${hh}:${min}:${ss}`;
+}
 
 export default function AdminPage() {
   const [activeTab, setActiveTab] = useState('dashboard'); // dashboard, users, settings
@@ -60,6 +72,9 @@ export default function AdminPage() {
   // 焊口过滤条件
   const [filterWeld, setFilterWeld] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+  const [uploadStartDate, setUploadStartDate] = useState('');
+  const [uploadEndDate, setUploadEndDate] = useState('');
+  const [is24hActive, setIs24hActive] = useState(false);
 
   // 成员与设置数据
   const [users, setUsers] = useState([]);
@@ -391,14 +406,20 @@ export default function AdminPage() {
     setQrPipelineUuid(pipelineUuid);
     setQrPipelineNo(pipeline.pipeline_no);
     setQrLoading(true);
-    setQrData({ qr: '', url: '' });
+    setQrData({ qr: '', url: '', project_name: '', construction_no: '' });
     setShowQRModal(true);
 
     try {
       const resp = await fetch(`/api/admin/qrcode/${encodeURIComponent(pipelineUuid)}`);
       const data = await resp.json();
       if (resp.ok && data.success) {
-        setQrData({ qr: data.qr, url: data.url });
+        const qrWithLogo = await addLogoToQRCode(data.qr, '/logo_zpje.jpg');
+        setQrData({
+          qr: qrWithLogo,
+          url: data.url,
+          project_name: data.project_name || selectedProject?.project_name || '',
+          construction_no: data.construction_no || selectedProject?.construction_no || '',
+        });
       } else {
         alert(data.error || '二维码获取失败');
         setShowQRModal(false);
@@ -800,7 +821,7 @@ export default function AdminPage() {
                     <div className="h-16 px-4 border-b border-[#e0e0e0] bg-[#f4f4f4] flex items-center justify-between select-none">
                       {selectedPipelineUuid ? (
                         <>
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-3 flex-wrap">
                             <div className="flex items-center gap-2">
                               <span className="text-[12px] text-[#525252] font-medium">焊口筛选:</span>
                               <input
@@ -823,10 +844,60 @@ export default function AdminPage() {
                                 <option value="pending">待录入</option>
                               </select>
                             </div>
+
+                            {/* 最近上传时间范围筛选 (精确到时分秒，放在重置按钮前，使其受重置控制) */}
+                            <div className="flex items-center gap-1.5 ml-1">
+                              <span className="text-[12px] text-[#525252] font-medium">最近上传时间:</span>
+                              <input
+                                type="datetime-local"
+                                step="1"
+                                lang="en-GB"
+                                placeholder="yyyy/mm/dd hh:mm:ss"
+                                value={uploadStartDate}
+                                onChange={(e) => { setUploadStartDate(e.target.value); setIs24hActive(false); }}
+                                className="h-8 px-2 bg-white border border-[#c6c6c6] text-[12px] text-[#161616] outline-none focus:border-[#0f62fe] rounded-none font-sans"
+                              />
+                              <span className="text-[#8d8d8d]">-</span>
+                              <input
+                                type="datetime-local"
+                                step="1"
+                                lang="en-GB"
+                                placeholder="yyyy/mm/dd hh:mm:ss"
+                                value={uploadEndDate}
+                                onChange={(e) => { setUploadEndDate(e.target.value); setIs24hActive(false); }}
+                                className="h-8 px-2 bg-white border border-[#c6c6c6] text-[12px] text-[#161616] outline-none focus:border-[#0f62fe] rounded-none font-sans"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (is24hActive) {
+                                    setIs24hActive(false);
+                                    setUploadStartDate('');
+                                    setUploadEndDate('');
+                                  } else {
+                                    setIs24hActive(true);
+                                    const now = new Date();
+                                    const ago24h = new Date(now.getTime() - 24 * 3600 * 1000);
+                                    setUploadStartDate(formatDatetimeLocal(ago24h));
+                                    setUploadEndDate(formatDatetimeLocal(now));
+                                  }
+                                }}
+                                className={`h-8 px-2.5 text-[12px] border cursor-pointer font-medium rounded-none transition-colors ${is24hActive
+                                  ? 'bg-[#0f62fe] text-white border-[#0f62fe]'
+                                  : 'bg-white text-[#525252] border-[#c6c6c6] hover:bg-[#edf5ff] hover:text-[#0f62fe]'
+                                  }`}
+                              >
+                                ⏱️ 最近 24 小时
+                              </button>
+                            </div>
+
                             <button
                               onClick={() => {
                                 setFilterWeld('');
                                 setFilterStatus('');
+                                setUploadStartDate('');
+                                setUploadEndDate('');
+                                setIs24hActive(false);
                               }}
                               className="h-8 px-3 border border-[#c6c6c6] bg-white hover:bg-[#e8e8e8] text-[12px] text-[#161616] cursor-pointer rounded-none font-medium"
                             >
@@ -839,7 +910,7 @@ export default function AdminPage() {
                               fetchRecords(selectedPipelineUuid);
                               fetchStats(selectedProjectUuid);
                             }}
-                            className="h-8 px-3 border border-[#0f62fe] bg-white hover:bg-[#edf5ff] text-[#0f62fe] text-[12px] cursor-pointer rounded-none font-medium flex items-center gap-1"
+                            className="h-8 px-3 border border-[#0f62fe] bg-white hover:bg-[#edf5ff] text-[#0f62fe] text-[12px] cursor-pointer rounded-none font-medium flex items-center gap-1 shrink-0 ml-2"
                           >
                             <span>🔄 刷新数据</span>
                           </button>
@@ -863,6 +934,9 @@ export default function AdminPage() {
 
                     <WeldMatrix
                       records={weldRecords}
+                      uploadStartDate={uploadStartDate}
+                      uploadEndDate={uploadEndDate}
+                      is24hActive={is24hActive}
                       onRefresh={() => {
                         fetchRecords(selectedPipelineUuid);
                         fetchStats(selectedProjectUuid);
@@ -1325,7 +1399,7 @@ export default function AdminPage() {
         <div className="fixed inset-0 bg-black/40 z-[99999] flex items-center justify-center p-4">
           <div className="w-full max-w-[600px] bg-white border border-[#e0e0e0] p-6 rounded-none select-none">
             <div className="flex justify-between items-center mb-4 pb-2 border-b border-[#e0e0e0]">
-              <h3 className="text-[18px] font-light text-[#161616]">导入管线焊口 Excel</h3>
+              <h3 className="text-[18px] font-light text-[#161616]">导入管线焊口数据</h3>
               <button
                 onClick={() => setShowImportModal(false)}
                 className="bg-transparent border-none text-[#525252] hover:text-[#161616] text-[18px] cursor-pointer"
@@ -1345,7 +1419,7 @@ export default function AdminPage() {
               className="border-2 border-dashed border-[#c6c6c6] hover:border-[#0f62fe] bg-[#f4f4f4] py-8 text-center cursor-pointer transition-colors duration-150"
             >
               <div className="text-[28px] mb-1">📎</div>
-              <div className="text-[13px] text-[#161616] font-medium">点击选择或拖入 Excel 文件</div>
+              <div className="text-[18px] text-[#161616] font-medium">点击选择或拖入 Excel 文件</div>
             </div>
             <input
               type="file"
@@ -1421,9 +1495,6 @@ export default function AdminPage() {
               </button>
             </div>
 
-            <div className="font-semibold text-[15px] text-[#161616] mb-4 text-left">
-              管线号: {qrPipelineNo}
-            </div>
 
             <div className="w-64 h-64 mx-auto bg-white border border-[#e0e0e0] flex items-center justify-center p-2">
               {qrLoading ? (
@@ -1435,9 +1506,20 @@ export default function AdminPage() {
               )}
             </div>
 
+            <div className="font-semibold text-[15px] text-[#161616] mb-4 text-center space-y-1">
+              {(qrData.project_name || selectedProject?.project_name) && (
+                <div className="text-[15px] text-[#525252]">
+                  {qrData.project_name || selectedProject?.project_name}
+                  <br />
+                  ({qrData.construction_no || selectedProject?.construction_no})
+                </div>
+              )}
+              <div>管线号: {qrPipelineNo}</div>
+            </div>
+
             {!qrLoading && qrData.url && (
               <div className="mt-3 text-[11px] text-[#8d8d8d] break-all text-left">
-                链接: {qrData.url}
+                URL: {qrData.url}
               </div>
             )}
 

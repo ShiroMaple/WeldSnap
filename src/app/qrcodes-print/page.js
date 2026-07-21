@@ -11,12 +11,11 @@
 
 import { useEffect, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { addLogoToQRCode } from '@/lib/qrLogo';
 
 function QrCodesPrintContent() {
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState([]);
-  const [serverIP, setServerIP] = useState('');
-  const [port, setPort] = useState(3000);
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -48,9 +47,15 @@ function QrCodesPrintContent() {
         const qrResp = await fetch(`/api/admin/qrcodes?${queryParams.toString()}`);
         const qrData = await qrResp.json();
         if (qrResp.ok && qrData.success) {
-          setItems(qrData.items || []);
-          setServerIP(qrData.serverIP || '');
-          setPort(qrData.port || 3000);
+          const rawItems = qrData.items || [];
+          // 为批量二维码逐个叠加 /logo_zpje.jpg 中心标志
+          const itemsWithLogo = await Promise.all(
+            rawItems.map(async (it) => ({
+              ...it,
+              qr: await addLogoToQRCode(it.qr, '/logo_zpje.jpg'),
+            }))
+          );
+          setItems(itemsWithLogo);
         } else {
           alert(qrData.error || '获取二维码列表失败');
         }
@@ -74,7 +79,8 @@ function QrCodesPrintContent() {
 
   return (
     <div className="min-h-screen bg-white p-8 font-sans">
-      <style dangerouslySetInnerHTML={{__html: `
+      <style dangerouslySetInnerHTML={{
+        __html: `
         @media print {
           .print-avoid-break {
             page-break-inside: avoid !important;
@@ -89,7 +95,7 @@ function QrCodesPrintContent() {
         <div>
           <h1 className="text-[18px] font-semibold text-[#161616]">管线二维码批量打印页</h1>
           <p className="text-[12px] text-[#525252] mt-1">
-            当前绑定局域网服务器地址: <span className="text-[#0f62fe] font-semibold">http://{serverIP}:{port}</span>
+            当前绑定服务器地址: <span className="text-[#0f62fe] font-semibold">https://weldsnap.izpje.com/</span>
           </p>
         </div>
         <div className="flex gap-3">
@@ -126,13 +132,20 @@ function QrCodesPrintContent() {
                 alt={item.pipeline_no}
                 className="w-48 h-48 bg-white border border-[#e0e0e0] p-1 print:w-44 print:h-44"
               />
-              <div className="mt-4 w-full">
-                <span className="block text-[15px] font-bold text-[#161616] truncate">
+              <div className="mt-4 w-full text-center">
+                {(item.project_name || item.construction_no) && (
+                  <span className="block text-[15px] font-semibold text-[#161616] truncate mb-0.5">
+                    {item.project_name}
+                    <br />
+                    ({item.construction_no})
+                  </span>
+                )}
+                <span className="block text-[15px] font-bold text-[#161616] truncate mt-0.5">
                   管线号: {item.pipeline_no}
                 </span>
-                <span className="block text-[9px] text-[#8d8d8d] truncate mt-1.5 print:text-[8px]">
+                {/* <span className="block text-[9px] text-[#8d8d8d] truncate mt-1 print:text-[8px]">
                   {item.url}
-                </span>
+                </span> */}
               </div>
             </div>
           ))}
@@ -141,7 +154,7 @@ function QrCodesPrintContent() {
 
       {/* 打印专用底栏 */}
       <footer className="hidden print:block text-center text-[10px] text-[#8d8d8d] mt-12 border-t border-dashed border-[#ccc] pt-4">
-        WeldSnap V2.0 管线焊口照片拍照系统 — 二维码打印凭证
+        WeldSnap V2.0 建安管线焊口工序质量记录 — 二维码打印凭证
       </footer>
     </div>
   );

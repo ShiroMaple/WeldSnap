@@ -49,9 +49,11 @@ async function handler(request) {
   try {
     for (const p of pipelines) {
       const url = `${baseUrl}/upload?pipeline_uuid=${p.uuid}`;
-      const qr = await QRCode.toDataURL(url, { width: 250, margin: 1 });
+      const qr = await QRCode.toDataURL(url, { width: 250, margin: 1, errorCorrectionLevel: 'H' });
       items.push({
         pipeline_no: p.pipeline_no,
+        project_name: p.project_name || '',
+        construction_no: p.construction_no || '',
         url,
         qr,
       });

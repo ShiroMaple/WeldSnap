@@ -42,10 +42,10 @@ async function handler(request, { params }) {
   // 2. 构造手机扫码端地址 (Next.js 路由 /upload?pipeline_uuid=...)
   const url = `${baseUrl}/upload?pipeline_uuid=${pipelineUuid}`;
 
-  // 3. 生成二维码 Base64
+  // 3. 生成二维码 Base64 (使用 H 级容错率，确保中心叠加 Logo 时可正常识读)
   let qrDataUrl;
   try {
-    qrDataUrl = await QRCode.toDataURL(url, { width: 300, margin: 1 });
+    qrDataUrl = await QRCode.toDataURL(url, { width: 300, margin: 1, errorCorrectionLevel: 'H' });
   } catch (err) {
     return Response.json({ success: false, error: '二维码生成失败: ' + err.message }, { status: 500 });
   }
@@ -55,6 +55,8 @@ async function handler(request, { params }) {
     url,
     qr: qrDataUrl,
     pipeline_no: pipeline.pipeline_no,
+    project_name: pipeline.project_name || '',
+    construction_no: pipeline.construction_no || '',
   });
 }
 

@@ -248,7 +248,7 @@ export default function PipelineTree({
             onClick={onImportClick}
             className="h-8 bg-[#393939] hover:bg-[#4c4c4c] text-white text-[11px] font-medium cursor-pointer rounded-none border-none outline-none flex items-center justify-center gap-1 font-sans"
           >
-            批量导入
+            批量处理
           </button>
 
         </div>

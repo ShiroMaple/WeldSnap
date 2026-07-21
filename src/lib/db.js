@@ -322,6 +322,9 @@ function listPipelines(projectUuid) {
   return db.prepare(`
     SELECT
       pl.*,
+      pr.project_name,
+      pr.construction_no,
+      pr.uuid as project_uuid,
       (SELECT COUNT(*) FROM weld_records WHERE pipeline_id = pl.id) as weld_count,
       (
         SELECT COUNT(*)
@@ -354,7 +357,12 @@ function exportProjectData(projectUuid) {
 }
 
 function getPipelineByUuid(uuid) {
-  return db.prepare('SELECT * FROM pipelines WHERE uuid = ?').get(uuid) || null;
+  return db.prepare(`
+    SELECT pl.*, pr.project_name, pr.construction_no, pr.uuid as project_uuid
+    FROM pipelines pl
+    JOIN projects pr ON pl.project_id = pr.id
+    WHERE pl.uuid = ?
+  `).get(uuid) || null;
 }
 
 function createPipeline(projectUuid, pipelineNo) {

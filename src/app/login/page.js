@@ -150,6 +150,11 @@ export default function LoginPage() {
 
         {/* 顶部 Logo 与系统名称 */}
         <header className="mb-6">
+          <img
+            src="/logo_zpje.jpg"
+            alt="Logo"
+            className="h-10 w-auto object-contain mb-3 border border-[#e0e0e0] p-0.5 bg-white"
+          />
           <h1 className="text-[28px] font-light leading-tight tracking-normal text-[#161616]">
             管线焊口工序质量记录
           </h1>
