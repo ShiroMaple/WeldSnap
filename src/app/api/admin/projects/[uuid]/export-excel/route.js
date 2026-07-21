@@ -3,18 +3,25 @@ export const dynamic = 'force-dynamic';
  * 模板格式化 Excel 数据导出接口 (管理员权限)
  * POST /api/admin/projects/[uuid]/export-excel
  *
- * 依据 public/demo.xlsx 模板导出当前项目/指定管线的全量焊口记录。
- * 包含：项目名称、施工号、管线号、焊口号、检查结果、并嵌入组对/打底/盖面照片 Buffer。
+ * 导出当前项目/指定管线的全量焊口记录为 27 列标注质量管理 Excel 表。
+ * 包含：序号、项目名称、施工号、管线号、焊口号、检查结果、并嵌入组对/打底/盖面照片 Buffer。
+ * 无需依赖外部 public/demo.xlsx 文件，纯代码自主构建表头与格式。
  */
 
-const path = require('path');
-const fs = require('fs');
 const ExcelJS = require('exceljs');
 const { withTrace } = require('../../../../../../middleware/withTrace');
 const { requireAdmin } = require('../../../../../../middleware/auth');
 const db = require('../../../../../../lib/db');
 const { getOSSClient } = require('../../../../../../lib/oss');
 const logger = require('../../../../../../lib/logger');
+
+// 27 标准列定义
+const DEMO_HEADERS = [
+  '序号', '项目名称', '施工号', '建设单位', '装置名称', '施工单位', '图纸号',
+  '管线号', '焊口号', '公称直径', '组对日期', '组对人', '坡口形式', '组对照片',
+  '焊接日期', '打底焊接方法', '填充盖面焊接方法', '焊接位置', '打底焊工', '盖面焊工',
+  '打底照片', '盖面照片', '检查状态', '检查结果', '检查人', '检查日期', '备注'
+];
 
 // 从 OSS 获取照片 Buffer（若被标记驳回，剥离 REJECTED: 前缀进行云端检索）
 async function fetchPhotoBuffer(photoKey) {
@@ -69,28 +76,36 @@ async function handler(request, { params }) {
     return Response.json({ success: false, error: '项目不存在' }, { status: 404 });
   }
 
-  // 读取模板文件 public/demo.xlsx
-  const templatePath = path.join(process.cwd(), 'public', 'demo.xlsx');
-  if (!fs.existsSync(templatePath)) {
-    return Response.json({ success: false, error: '后端缺失 Excel 导出模板 (public/demo.xlsx)' }, { status: 500 });
-  }
-
   const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.readFile(templatePath);
+  const worksheet = workbook.addWorksheet('Sheet1');
 
-  const worksheet = workbook.getWorksheet(1);
+  // 1. 写入表头 (第 1 行)
+  const headerRow = worksheet.addRow(DEMO_HEADERS);
+  headerRow.height = 28;
 
-  // 匹配表头列名索引（1-indexed）
   const colMap = {};
-  const headerRow = worksheet.getRow(1);
   headerRow.eachCell((cell, colNumber) => {
     const name = String(cell.value || '').trim();
     if (name) {
       colMap[name] = colNumber;
     }
+    // 表头精致 Carbon 风格浅灰色背景与黑体
+    cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF161616' } };
+    cell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFF4F4F4' },
+    };
+    cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    cell.border = {
+      top: { style: 'thin', color: { argb: 'FFE0E0E0' } },
+      left: { style: 'thin', color: { argb: 'FFE0E0E0' } },
+      bottom: { style: 'medium', color: { argb: 'FFC6C6C6' } },
+      right: { style: 'thin', color: { argb: 'FFE0E0E0' } },
+    };
   });
 
-  // 填充数据行（从第 2 行开始）
+  // 2. 填充数据行（从第 2 行开始）
   let currentRowIndex = 2;
 
   for (let i = 0; i < records.length; i++) {
@@ -122,6 +137,12 @@ async function handler(request, { params }) {
     row.eachCell((cell) => {
       cell.alignment = { vertical: 'middle', horizontal: 'center' };
       cell.font = { name: 'Arial', size: 10 };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFE0E0E0' } },
+        left: { style: 'thin', color: { argb: 'FFE0E0E0' } },
+        bottom: { style: 'thin', color: { argb: 'FFE0E0E0' } },
+        right: { style: 'thin', color: { argb: 'FFE0E0E0' } },
+      };
     });
 
     // 照片抓取与单元格图像嵌入
@@ -159,12 +180,21 @@ async function handler(request, { params }) {
     currentRowIndex++;
   }
 
-  // 适当扩展列宽
-  if (colMap['组对照片']) worksheet.getColumn(colMap['组对照片']).width = 18;
-  if (colMap['打底照片']) worksheet.getColumn(colMap['打底照片']).width = 18;
-  if (colMap['盖面照片']) worksheet.getColumn(colMap['盖面照片']).width = 18;
-  if (colMap['管线号']) worksheet.getColumn(colMap['管线号']).width = 16;
-  if (colMap['项目名称']) worksheet.getColumn(colMap['项目名称']).width = 22;
+  // 设置合理列宽
+  DEMO_HEADERS.forEach((h, index) => {
+    const col = worksheet.getColumn(index + 1);
+    if (['组对照片', '打底照片', '盖面照片'].includes(h)) {
+      col.width = 18;
+    } else if (['项目名称'].includes(h)) {
+      col.width = 22;
+    } else if (['管线号', '施工号'].includes(h)) {
+      col.width = 16;
+    } else if (['焊口号', '检查结果', '序号'].includes(h)) {
+      col.width = 12;
+    } else {
+      col.width = 14;
+    }
+  });
 
   // 生成 xlsx Buffer
   const buffer = await workbook.xlsx.writeBuffer();

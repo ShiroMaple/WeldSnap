@@ -12,6 +12,7 @@ const nextConfig = {
     'ali-oss',
     'bcryptjs',
     'xlsx',
+    'exceljs',
     'qrcode',
     'sonic-boom',
   ],
