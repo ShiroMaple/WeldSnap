@@ -5,76 +5,120 @@ import { useRouter } from 'next/navigation';
 import QrScanner from 'qr-scanner';
 
 /**
- * 移动端实时二维码解算组件 (基于 qr-scanner Web Worker 架构)
+ * 移动端二维码解算组件 (基于 qr-scanner Web Worker 架构)
  *
  * 特性：
- *   - 使用 Web Worker 进行后台帧解算，确保 UI 线程流畅不卡顿
- *   - 中央 60% 区域 ROI 限制解算，降低 CPU 与功耗
- *   - 正则自动校验 WeldSnap UUID 链接/字符串
- *   - 防重复触发锁与硬件震动正反馈
- *   - 补光灯/手电筒开闭控制
+ *   1. 双重即时正反馈：Web Audio 800Hz 响亮提示音（100% 兼容 iOS/Android/微信）+ 硬件震动。
+ *   2. 视觉识别成功状态：框体变为绿色 (#24a148)，显示 ✅ 识别成功 动态徽章与提示气泡。
+ *   3. 延迟 350ms 顺畅跳转：兼顾视觉确认体验与无感定位。
+ *   4. 单一精致 Carbon 蓝框 + 手电筒常驻 + 原生相机拍照降级。
  */
 export function RealtimeQRScanner({ onMatchedUuid, onClose }) {
   const router = useRouter();
   const videoRef = useRef(null);
   const scannerRef = useRef(null);
-  const isNavigating = useRef(false);
+  const cameraFileInputRef = useRef(null);
+  const albumFileInputRef = useRef(null);
 
+  const isNavigating = useRef(false);
   const [hasFlash, setHasFlash] = useState(false);
   const [isFlashOn, setIsFlashOn] = useState(false);
+  const [streamActive, setStreamActive] = useState(false);
   const [cameraError, setCameraError] = useState('');
+  const [processingPhoto, setProcessingPhoto] = useState(false);
+
+  // 识别成功视觉状态
+  const [scanSuccess, setScanSuccess] = useState(false);
+  const [matchedUuidText, setMatchedUuidText] = useState('');
+
+  // 播放清脆的 800Hz Web Audio 反馈提示音 (100% 兼容 iOS Safari / 微信 / Android)
+  const playBeep = () => {
+    try {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) return;
+      const ctx = new AudioContextClass();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(800, ctx.currentTime);
+      gain.gain.setValueAtTime(0.35, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start();
+      osc.stop(ctx.currentTime + 0.15);
+    } catch { }
+  };
+
+  // 通用 UUID 匹配与跳转锁逻辑
+  const handleMatchText = (text) => {
+    if (isNavigating.current || !text) return false;
+
+    const match =
+      text.match(/\/m\/weld\/([a-f0-9-]{36})/i) ||
+      text.match(/pipeline_uuid=([a-f0-9-]{36})/i) ||
+      text.match(/^([a-f0-9-]{36})$/i);
+
+    if (match) {
+      const matchedUuid = match[1] || match[0];
+      isNavigating.current = true;
+
+      // 1. 触发双重正反馈：Audio 提示音 + 硬件震动
+      playBeep();
+      if (typeof window !== 'undefined' && 'vibrate' in navigator) {
+        try {
+          navigator.vibrate([120, 40, 120]);
+        } catch { }
+      }
+
+      // 2. 激活视觉“识别成功”绿框与气泡
+      setScanSuccess(true);
+      setMatchedUuidText(matchedUuid);
+
+      // 3. 停止视频流
+      if (scannerRef.current) {
+        try {
+          scannerRef.current.stop();
+        } catch { }
+      }
+
+      // 4. 延迟 350ms 后无感跳转，留出充分的视觉确认感
+      setTimeout(() => {
+        if (onMatchedUuid) {
+          onMatchedUuid(matchedUuid);
+        } else {
+          router.push(`/m/weld/${matchedUuid}`);
+        }
+      }, 350);
+
+      return true;
+    }
+    return false;
+  };
 
   useEffect(() => {
     if (!videoRef.current) return;
 
     isNavigating.current = false;
+    setScanSuccess(false);
     setCameraError('');
+    setStreamActive(false);
 
     const qrScanner = new QrScanner(
       videoRef.current,
       (result) => {
-        if (isNavigating.current) return;
-
         const text = result?.data || (typeof result === 'string' ? result : '');
-        if (!text) return;
-
-        // 正则提取 UUID 模式（支持 URL 路径 /m/weld/UUID、?pipeline_uuid=UUID 或纯 UUID 字符串）
-        const match =
-          text.match(/\/m\/weld\/([a-f0-9-]{36})/i) ||
-          text.match(/pipeline_uuid=([a-f0-9-]{36})/i) ||
-          text.match(/^([a-f0-9-]{36})$/i);
-
-        if (match) {
-          const matchedUuid = match[1] || match[0];
-          isNavigating.current = true;
-
-          // 1. 立即停止扫描，防止连续触发
-          try {
-            qrScanner.stop();
-          } catch {}
-
-          // 2. 触发系统震动硬件反馈
-          if (typeof window !== 'undefined' && 'vibrate' in navigator) {
-            try {
-              navigator.vibrate(150);
-            } catch {}
-          }
-
-          // 3. 执行匹配成功逻辑
-          if (onMatchedUuid) {
-            onMatchedUuid(matchedUuid);
-          } else {
-            router.push(`/m/weld/${matchedUuid}`);
-          }
-        }
+        handleMatchText(text);
       },
       {
-        highlightScanRegion: true,
-        highlightCodeOutline: true,
+        highlightScanRegion: false, // 禁用库自带画框
+        highlightCodeOutline: false,
         returnDetailedScanResult: true,
-        maxScansPerSecond: 15, // 15 fps 帧率解算，兼顾性能与功耗
+        maxScansPerSecond: 15,
         calculateScanRegion: (video) => {
-          // 限制仅识别中央 60% 区域 ROI
           const factor = 0.6;
           const width = video.videoWidth * factor;
           const height = video.videoHeight * factor;
@@ -90,89 +134,201 @@ export function RealtimeQRScanner({ onMatchedUuid, onClose }) {
     qrScanner
       .start()
       .then(() => {
-        QrScanner.hasFlash().then(setHasFlash).catch(() => setHasFlash(false));
+        setStreamActive(true);
+        setCameraError('');
+
+        try {
+          QrScanner.hasFlash()
+            .then((res) => setHasFlash(!!res))
+            .catch(() => setHasFlash(true));
+        } catch {
+          setHasFlash(true);
+        }
       })
       .catch((err) => {
-        setCameraError('无法打开摄像头，请确保已授予摄像头访问权限并在 HTTPS/localhost 下使用');
+        console.warn('Realtime camera stream failed:', err);
+        setStreamActive(false);
+        setCameraError(
+          '当前环境限制了实时视频流。请点击下方【📷 使用系统相机拍照识别】按钮'
+        );
       });
 
     return () => {
       try {
         qrScanner.stop();
         qrScanner.destroy();
-      } catch {}
+      } catch { }
     };
   }, [router, onMatchedUuid]);
 
+  // 补光灯/手电筒切换
   const toggleFlash = async () => {
     if (scannerRef.current) {
       try {
         await scannerRef.current.toggleFlash();
         setIsFlashOn(scannerRef.current.isFlashOn());
-      } catch {}
+      } catch (err) {
+        console.warn('Flashlight toggle failed:', err);
+      }
+    }
+  };
+
+  // 原生相机/相册照片 Web Worker 静态解码
+  const handleFileScan = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setProcessingPhoto(true);
+    setCameraError('');
+
+    try {
+      const result = await QrScanner.scanImage(file, {
+        returnDetailedScanResult: true,
+        alsoTryWithoutScanRegion: true,
+      });
+
+      const text = result?.data || (typeof result === 'string' ? result : '');
+      const matched = handleMatchText(text);
+
+      if (!matched) {
+        setCameraError('未能在照片中提取到有效的管线二维码，请重试');
+      }
+    } catch {
+      setCameraError('未能在拍摄的照片中识别到二维码，请保持清晰并重新拍摄');
+    } finally {
+      setProcessingPhoto(false);
+      e.target.value = '';
     }
   };
 
   return (
-    <div className="relative w-full h-full min-h-[420px] bg-black overflow-hidden flex flex-col justify-between select-none">
-      {/* 视频渲染层 */}
+    <div className="relative w-full h-full min-h-[460px] bg-black overflow-hidden flex flex-col justify-between p-4 select-none font-sans">
+      {/* 隐藏的原生相机与相册 File Input */}
+      <input
+        type="file"
+        ref={cameraFileInputRef}
+        accept="image/*"
+        capture="environment"
+        onChange={handleFileScan}
+        className="hidden"
+      />
+      <input
+        type="file"
+        ref={albumFileInputRef}
+        accept="image/*"
+        onChange={handleFileScan}
+        className="hidden"
+      />
+
+      {/* 实时视频/预览层 */}
       <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover" />
 
-      {/* 遮罩与扫码框 (ROI Mask) */}
-      <div className="absolute inset-0 z-10 flex flex-col items-center justify-between p-4 pointer-events-none">
-        {/* 顶部控制栏 */}
-        <div className="w-full flex items-center justify-between text-white pointer-events-auto">
-          <div className="bg-black/60 px-3 py-1.5 backdrop-blur-md border border-white/20 text-[13px] font-medium">
-            📷 扫码定位管线号
-          </div>
-
-          <div className="flex items-center space-x-2">
-            {hasFlash && (
-              <button
-                type="button"
-                onClick={toggleFlash}
-                className="h-10 px-3 bg-black/60 hover:bg-black/80 backdrop-blur-md text-white text-[13px] font-medium border border-white/20 cursor-pointer outline-none"
-              >
-                {isFlashOn ? '💡 关灯' : '🔦 开灯'}
-              </button>
-            )}
-
-            {onClose && (
-              <button
-                type="button"
-                onClick={onClose}
-                className="h-10 px-3 bg-[#da1e28] hover:bg-[#b21922] text-white text-[13px] font-medium border-none cursor-pointer outline-none"
-              >
-                关闭
-              </button>
-            )}
-          </div>
+      {/* 顶部控制栏 */}
+      <div className="relative z-20 flex items-center justify-between text-white">
+        <div className="bg-black/60 px-3 py-1.5 backdrop-blur-md border border-white/20 text-[13px] font-medium">
+          📷 扫码定位管线号
         </div>
 
-        {/* 中央扫码框与镂空视觉 */}
-        <div className="relative w-[260px] h-[260px] border-2 border-[#0f62fe] shadow-[0_0_0_9999px_rgba(0,0,0,0.6)]">
-          {/* 四角边框高亮 */}
-          <div className="absolute -top-1 -left-1 w-5 h-5 border-t-4 border-l-4 border-[#0f62fe]" />
-          <div className="absolute -top-1 -right-1 w-5 h-5 border-t-4 border-r-4 border-[#0f62fe]" />
-          <div className="absolute -bottom-1 -left-1 w-5 h-5 border-b-4 border-l-4 border-[#0f62fe]" />
-          <div className="absolute -bottom-1 -right-1 w-5 h-5 border-b-4 border-r-4 border-[#0f62fe]" />
+        <div className="flex items-center space-x-2">
+          {streamActive && (
+            <button
+              type="button"
+              onClick={toggleFlash}
+              className="h-10 px-3 bg-black/60 hover:bg-black/80 backdrop-blur-md text-white text-[13px] font-medium border border-white/20 cursor-pointer outline-none flex items-center space-x-1"
+            >
+              <span>{isFlashOn ? '💡 关灯' : '🔦 开灯'}</span>
+            </button>
+          )}
 
-          {/* 绿/蓝激光扫描线动画 */}
-          <div className="w-full h-1 bg-[#0f62fe] shadow-[0_0_8px_#0f62fe] animate-pulse absolute top-1/2 -translate-y-1/2" />
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="h-10 px-4 bg-[#393939] hover:bg-[#4c4c4c] text-white text-[13px] font-medium border-none cursor-pointer outline-none"
+            >
+              关闭
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* 中央扫码视觉框 */}
+      <div className="relative z-10 my-auto flex flex-col items-center justify-center pointer-events-none">
+        <div
+          className={`relative w-[260px] h-[260px] border-2 transition-all duration-300 ${scanSuccess ? 'border-[#24a148] bg-[#24a148]/20' : 'border-[#0f62fe]'
+            } shadow-[0_0_0_9999px_rgba(0,0,0,0.65)]`}
+        >
+          {/* 四角高亮 */}
+          <div
+            className={`absolute -top-1 -left-1 w-5 h-5 border-t-4 border-l-4 transition-colors duration-300 ${scanSuccess ? 'border-[#24a148]' : 'border-[#0f62fe]'
+              }`}
+          />
+          <div
+            className={`absolute -top-1 -right-1 w-5 h-5 border-t-4 border-r-4 transition-colors duration-300 ${scanSuccess ? 'border-[#24a148]' : 'border-[#0f62fe]'
+              }`}
+          />
+          <div
+            className={`absolute -bottom-1 -left-1 w-5 h-5 border-b-4 border-l-4 transition-colors duration-300 ${scanSuccess ? 'border-[#24a148]' : 'border-[#0f62fe]'
+              }`}
+          />
+          <div
+            className={`absolute -bottom-1 -right-1 w-5 h-5 border-b-4 border-r-4 transition-colors duration-300 ${scanSuccess ? 'border-[#24a148]' : 'border-[#0f62fe]'
+              }`}
+          />
+
+          {/* 扫码成功 Overlay 徽章 */}
+          {scanSuccess ? (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#24a148]/30 backdrop-blur-xs animate-fade-in">
+              <span className="text-[54px]">✅</span>
+              <span className="text-white text-[16px] font-bold mt-1 tracking-wider">识别成功</span>
+            </div>
+          ) : (
+            streamActive && (
+              <div className="w-full h-1 bg-[#0f62fe] shadow-[0_0_8px_#0f62fe] animate-pulse absolute top-1/2 -translate-y-1/2" />
+            )
+          )}
         </div>
 
-        {/* 底部提示文字 */}
-        <div className="w-full text-center pb-2 pointer-events-auto">
-          {cameraError ? (
-            <div className="bg-[#da1e28] text-white p-3 text-[13px] inline-block max-w-[320px]">
+        {/* 底部提示文字 / 成功气泡 / 降级说明 */}
+        <div className="mt-4 max-w-[320px] text-center pointer-events-auto">
+          {scanSuccess ? (
+            <div className="bg-[#24a148] text-white px-4 py-2.5 text-[13px] font-semibold flex items-center justify-center space-x-2 animate-pulse shadow-lg">
+              <span>✅ 识别成功！正在加载管线数据...</span>
+            </div>
+          ) : processingPhoto ? (
+            <div className="bg-[#0f62fe] text-white px-4 py-2 text-[13px] font-mono">
+              [WeldSnap] 正在通过 Web Worker 解码照片...
+            </div>
+          ) : cameraError ? (
+            <div className="bg-[#393939] text-[#f4f4f4] p-3 text-[12px] text-left border border-[#525252] leading-relaxed">
               {cameraError}
             </div>
           ) : (
             <div className="bg-black/60 px-4 py-2 text-white/90 text-[12px] font-mono inline-block backdrop-blur-md border border-white/20">
-              将管线二维码对准中央框框，识别成功将自动锁定
+              将管线二维码对准中央框体，识别成功将自动跳转
             </div>
           )}
         </div>
+      </div>
+
+      {/* 底部 52px+ 工业级大按键操作区 */}
+      <div className="relative z-20 space-y-2.5 pt-2">
+        <button
+          type="button"
+          onClick={() => cameraFileInputRef.current && cameraFileInputRef.current.click()}
+          className="w-full h-14 bg-[#0f62fe] hover:bg-[#0353e9] active:bg-[#002d9c] text-white text-[15px] font-semibold cursor-pointer rounded-none border-none outline-none flex items-center justify-center space-x-2"
+        >
+          <span className="text-[20px]">📷</span>
+          <span>使用系统相机拍照识别</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => albumFileInputRef.current && albumFileInputRef.current.click()}
+          className="w-full h-13 bg-[#393939] hover:bg-[#4c4c4c] text-white text-[14px] font-medium cursor-pointer rounded-none border-none outline-none flex items-center justify-center space-x-2"
+        >
+          <span>🖼️ 从相册选择二维码照片</span>
+        </button>
       </div>
     </div>
   );
