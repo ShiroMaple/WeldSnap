@@ -637,6 +637,10 @@ export default function WeldMatrix({
           <div className="h-full flex items-center justify-center text-[#8d8d8d] text-[14px] select-none">
             该管线号下暂无焊口数据，请在右侧新增或通过左侧导入 Excel
           </div>
+        ) : sortedRecords.length === 0 ? (
+          <div className="h-full flex items-center justify-center text-[#8d8d8d] text-[14px] select-none">
+            当前筛选条件下无结果
+          </div>
         ) : (
           <div className="w-full">
             <table className="w-full border-collapse text-[13px] text-left select-none">

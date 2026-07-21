@@ -78,6 +78,12 @@ export default function AdminPage() {
   const [uploadEndDate, setUploadEndDate] = useState('');
   const [is24hActive, setIs24hActive] = useState(false);
 
+  // 避免 setInterval 闭包陈旧问题：使用 ref 实时维持当前最新过滤状态
+  const filtersRef = useRef({ filterWeld, filterStatus });
+  useEffect(() => {
+    filtersRef.current = { filterWeld, filterStatus };
+  }, [filterWeld, filterStatus]);
+
   // 成员与设置数据
   const [users, setUsers] = useState([]);
   const [settings, setSettings] = useState(null);
@@ -170,15 +176,18 @@ export default function AdminPage() {
     } catch { }
   };
 
-  const fetchRecords = async (pipelineUuid) => {
+  const fetchRecords = async (pipelineUuid, overrideWeld, overrideStatus) => {
     if (!pipelineUuid) {
       setWeldRecords([]);
       return;
     }
+    const currentWeld = overrideWeld !== undefined ? overrideWeld : filtersRef.current.filterWeld;
+    const currentStatus = overrideStatus !== undefined ? overrideStatus : filtersRef.current.filterStatus;
+
     const params = new URLSearchParams();
     params.set('pipeline_uuid', pipelineUuid);
-    if (filterWeld) params.set('weld_no', filterWeld);
-    if (filterStatus) params.set('status', filterStatus);
+    if (currentWeld) params.set('weld_no', currentWeld);
+    if (currentStatus) params.set('status', currentStatus);
 
     try {
       const resp = await fetch(`/api/admin/records?${params.toString()}`);
@@ -905,8 +914,7 @@ export default function AdminPage() {
                               <input
                                 type="datetime-local"
                                 step="1"
-                                lang="en-GB"
-                                placeholder="yyyy/mm/dd hh:mm:ss"
+                                lang="zh-CN"
                                 value={uploadStartDate}
                                 onChange={(e) => { setUploadStartDate(e.target.value); setIs24hActive(false); }}
                                 className="h-8 px-2 bg-white border border-[#c6c6c6] text-[12px] text-[#161616] outline-none focus:border-[#0f62fe] rounded-none font-sans"
@@ -915,8 +923,7 @@ export default function AdminPage() {
                               <input
                                 type="datetime-local"
                                 step="1"
-                                lang="en-GB"
-                                placeholder="yyyy/mm/dd hh:mm:ss"
+                                lang="zh-CN"
                                 value={uploadEndDate}
                                 onChange={(e) => { setUploadEndDate(e.target.value); setIs24hActive(false); }}
                                 className="h-8 px-2 bg-white border border-[#c6c6c6] text-[12px] text-[#161616] outline-none focus:border-[#0f62fe] rounded-none font-sans"
@@ -963,6 +970,7 @@ export default function AdminPage() {
                             onClick={() => {
                               fetchRecords(selectedPipelineUuid);
                               fetchStats(selectedProjectUuid);
+                              if (selectedProjectUuid) fetchPipelines(selectedProjectUuid);
                             }}
                             className="h-8 px-3 border border-[#0f62fe] bg-white hover:bg-[#edf5ff] text-[#0f62fe] text-[12px] cursor-pointer rounded-none font-medium flex items-center gap-1 shrink-0 ml-2"
                           >
@@ -994,6 +1002,7 @@ export default function AdminPage() {
                       onRefresh={() => {
                         fetchRecords(selectedPipelineUuid);
                         fetchStats(selectedProjectUuid);
+                        if (selectedProjectUuid) fetchPipelines(selectedProjectUuid);
                       }}
                       currentUser={currentUser}
                       pipelineUuid={selectedPipelineUuid}
