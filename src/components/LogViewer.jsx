@@ -153,7 +153,7 @@ export default function LogViewer() {
           <select
             value={globalLevel}
             onChange={(e) => setGlobalLevel(e.target.value)}
-            className="h-8 px-2 bg-white border border-[#c6c6c6] text-[12px] outline-none focus:border-[#0f62fe] rounded-none cursor-pointer font-mono font-medium"
+            className="h-8 px-2 bg-white border border-[#c6c6c6] text-[12px] outline-none focus:border-[#0f62fe] rounded-none cursor-pointer font-medium"
           >
             <option value="trace">TRACE (全量最详细)</option>
             <option value="debug">DEBUG (开发调试)</option>
@@ -184,7 +184,7 @@ export default function LogViewer() {
               value={keyword}
               onChange={(e) => { setKeyword(e.target.value); setPage(1); }}
               placeholder="关键字 / URL / 消息..."
-              className="h-8 px-3 bg-white border border-[#c6c6c6] text-[13px] text-[#161616] outline-none focus:border-[#0f62fe] rounded-none placeholder-[#8d8d8d] w-48 font-mono"
+              className="h-8 px-3 bg-white border border-[#c6c6c6] text-[13px] text-[#161616] outline-none focus:border-[#0f62fe] rounded-none placeholder-[#8d8d8d] w-48"
             />
           </div>
 
@@ -194,7 +194,7 @@ export default function LogViewer() {
             <select
               value={levelFilter}
               onChange={(e) => { setLevelFilter(e.target.value); setPage(1); }}
-              className="h-8 px-2 bg-white border border-[#c6c6c6] text-[12px] outline-none focus:border-[#0f62fe] rounded-none cursor-pointer font-mono"
+              className="h-8 px-2 bg-white border border-[#c6c6c6] text-[12px] outline-none focus:border-[#0f62fe] rounded-none cursor-pointer"
             >
               <option value="">全部级别</option>
               <option value="trace">TRACE</option>
@@ -209,7 +209,7 @@ export default function LogViewer() {
 
           {/* TraceId 筛选 */}
           {traceIdFilter && (
-            <div className="flex items-center gap-1.5 bg-[#edf5ff] border border-[#a6c8ff] px-2.5 h-8 text-[12px] text-[#0f62fe] font-mono">
+            <div className="flex items-center gap-1.5 bg-[#edf5ff] border border-[#a6c8ff] px-2.5 h-8 text-[12px] text-[#0f62fe]">
               <span>TraceID: {traceIdFilter.slice(0, 8)}...</span>
               <button
                 onClick={() => setTraceIdFilter('')}
@@ -317,7 +317,7 @@ export default function LogViewer() {
       </div>
 
       {/* ─── 第三行：日志列表展示区 ─────────────────────── */}
-      <div className="flex-1 overflow-auto min-h-0 bg-white font-mono text-[12px]">
+      <div className="flex-1 overflow-auto min-h-0 bg-white text-[12px]">
         {loading && logs.length === 0 ? (
           <div className="p-12 text-center text-[#8d8d8d]">
             <div className="animate-spin inline-block w-6 h-6 border-2 border-[#0f62fe] border-t-transparent rounded-full mb-2"></div>
@@ -353,7 +353,7 @@ export default function LogViewer() {
                       isExpanded ? 'bg-[#edf5ff]' : 'hover:bg-[#f4f4f4]'
                     } ${item.level >= 50 ? 'bg-[#fff2f0]' : ''}`}
                   >
-                    <td className="py-2.5 px-4 text-[#525252] whitespace-nowrap align-top">
+                    <td className="py-2.5 px-4 text-[#525252] whitespace-nowrap align-top font-medium">
                       {item.time ? item.time.replace('T', ' ').slice(0, 23) : '-'}
                     </td>
                     <td className="py-2.5 px-3 whitespace-nowrap align-top">
@@ -373,7 +373,7 @@ export default function LogViewer() {
                             setTraceIdFilter(item.traceId);
                             setPage(1);
                           }}
-                          className="text-[#0f62fe] hover:underline bg-transparent border-none p-0 cursor-pointer font-mono text-[11px]"
+                          className="text-[#0f62fe] hover:underline bg-transparent border-none p-0 cursor-pointer text-[11px]"
                           title="点击快速筛选同一次 HTTP 请求的所有日志"
                         >
                           {item.traceId.slice(0, 8)}...
@@ -396,14 +396,14 @@ export default function LogViewer() {
 
                       {/* 错误堆栈/对象摘要 */}
                       {item.err && (
-                        <div className="mt-1 p-2 bg-[#fff2f0] border border-[#ffccc7] text-[#da1e28] text-[11px] font-mono leading-relaxed">
+                        <div className="mt-1 p-2 bg-[#fff2f0] border border-[#ffccc7] text-[#da1e28] text-[11px] leading-relaxed">
                           ⚠️ {item.err.message || JSON.stringify(item.err)}
                         </div>
                       )}
 
                       {/* 点击展开完整的 JSON 对象 */}
                       {isExpanded && (
-                        <div className="mt-3 p-3 bg-[#161616] text-[#24a148] overflow-x-auto text-[11px] leading-relaxed rounded-none select-text">
+                        <div className="mt-3 p-3 bg-[#161616] text-[#24a148] overflow-x-auto text-[11px] leading-relaxed rounded-none select-text font-mono">
                           <pre>{JSON.stringify(item, null, 2)}</pre>
                         </div>
                       )}
@@ -419,8 +419,8 @@ export default function LogViewer() {
       {/* ─── 第四行：分页控制栏 ─────────────────────────── */}
       <div className="h-14 px-6 border-t border-[#e0e0e0] bg-[#f4f4f4] flex justify-between items-center text-[12px] text-[#525252] shrink-0 select-none">
         <div className="flex items-center gap-3">
-          <span>共 <strong className="font-mono text-[#161616]">{total}</strong> 条记录</span>
-          <span>页码 <strong className="font-mono text-[#161616]">{page} / {totalPages}</strong></span>
+          <span>共 <strong className="text-[#161616]">{total}</strong> 条记录</span>
+          <span>页码 <strong className="text-[#161616]">{page} / {totalPages}</strong></span>
           <select
             value={pageSize}
             onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}

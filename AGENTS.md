@@ -2,7 +2,7 @@
 
 ## 项目简介
 
-石化管道焊口工序照片录入系统。扫码定位管线号，手机拍摄三道工序（组对/打底/盖面），自动命名归档。V2.0 从 Express 迁移到 Next.js App Router，使用 Tailwind CSS v4 + IBM Carbon Design System。
+石化管线焊口工序照片录入系统。扫码定位管线号，手机拍摄三道工序（组对/打底/盖面），自动命名归档。V2.0 从 Express 迁移到 Next.js App Router，使用 Tailwind CSS v4 + IBM Carbon Design System。
 
 ## 运行命令
 

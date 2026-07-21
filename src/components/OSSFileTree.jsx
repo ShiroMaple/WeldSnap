@@ -72,7 +72,7 @@ export default function OSSFileTree() {
                   <div>{renderNode(node.children, depth + 1)}</div>
                 )}
                 {isExpanded && (!node.children || node.children.length === 0) && (
-                  <div className="py-1 pl-8 text-[12px] text-[#8d8d8d] font-mono">
+                  <div className="py-1 pl-8 text-[12px] text-[#8d8d8d]">
                     (空文件夹)
                   </div>
                 )}
@@ -89,11 +89,11 @@ export default function OSSFileTree() {
                     href={`/api/admin/download?path=${encodeURIComponent(node.path)}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-[#0f62fe] hover:underline font-mono"
+                    className="text-[#0f62fe] hover:underline"
                   >
                     {node.name}
                   </a>
-                  <span className="text-[11px] text-[#8d8d8d] font-mono">
+                  <span className="text-[11px] text-[#8d8d8d]">
                     ({sizeKB} KB)
                   </span>
                 </div>
@@ -107,7 +107,7 @@ export default function OSSFileTree() {
 
   if (loading) {
     return (
-      <div className="py-8 text-center text-[#525252] text-[13px] font-mono">
+      <div className="py-8 text-center text-[#525252] text-[13px]">
         正在读取 OSS 云端文件树...
       </div>
     );
@@ -130,7 +130,7 @@ export default function OSSFileTree() {
   return (
     <div className="select-none">
       <header className="mb-4 pb-2 border-b border-[#e0e0e0] flex items-center justify-between">
-        <div className="text-[12px] text-[#8d8d8d] font-mono">
+        <div className="text-[12px] text-[#8d8d8d]">
           归档根目录: <span className="text-[#161616]">{rootPath}</span>
         </div>
         <button
@@ -142,7 +142,7 @@ export default function OSSFileTree() {
       </header>
 
       {treeData.length === 0 ? (
-        <div className="py-12 text-center text-[#8d8d8d] text-[13px] font-mono">
+        <div className="py-12 text-center text-[#8d8d8d] text-[13px]">
           OSS 桶中暂无 projects/ 归档照片数据，请先前往移动端拍照录入。
         </div>
       ) : (

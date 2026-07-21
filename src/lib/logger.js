@@ -24,6 +24,14 @@ if (Math.random() < -1) {
 
 const isDev = process.env.NODE_ENV !== 'production';
 
+// ─── 东八区 (GMT+8) 时间戳格式化函数 ──────────────────────
+function getCstIsoTime() {
+  const now = new Date();
+  const cstTime = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+  const iso = cstTime.toISOString();
+  return `, "time":"${iso.substring(0, 23)}+08:00"`;
+}
+
 // ─── Pino 基础配置 ───────────────────────────────────────
 const baseOptions = {
   level: isDev ? 'debug' : 'info',
@@ -57,8 +65,8 @@ const baseOptions = {
     return ctx;
   },
 
-  // ISO 8601 时间戳
-  timestamp: pino.stdTimeFunctions.isoTime,
+  // 强制使用 GMT+8 ISO 时间戳
+  timestamp: getCstIsoTime,
 };
 
 // ─── 环境分发与多目标 Transport ───────────────────────────

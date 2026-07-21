@@ -78,6 +78,42 @@ function UploadContent() {
   // 图片压缩配置
   const [compressConfig, setCompressConfig] = useState({ enabled: true, maxWidth: 1920, maxHeight: 1080, quality: 0.8 });
 
+  // ─── 移动端浏览器返回按键 (popstate) 与层级导航绑定 ────────────────
+  const isPopStateNav = useRef(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.history.replaceState({ level: 0 }, '', window.location.pathname);
+    } catch { }
+
+    const handlePopState = (e) => {
+      isPopStateNav.current = true;
+      const targetLevel = (e.state && typeof e.state.level === 'number') ? e.state.level : 0;
+      setCurrentLevel(targetLevel);
+      setTimeout(() => {
+        isPopStateNav.current = false;
+      }, 50);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, []);
+
+  // 统一层级切换包装函数 (自动向 history 压栈)
+  const navigateToLevel = (newLevel) => {
+    if (!isPopStateNav.current && typeof window !== 'undefined') {
+      try {
+        if (newLevel !== currentLevel) {
+          window.history.pushState({ level: newLevel }, '', window.location.pathname);
+        }
+      } catch { }
+    }
+    setCurrentLevel(newLevel);
+  };
+
   // ─── 页面初始化与认证检查 ──────────────────────────────────────
   useEffect(() => {
     async function initPage() {
@@ -166,7 +202,7 @@ function UploadContent() {
     }
   };
 
-  // 选择某个项目 (Level 0 ➔ Level 1.5)
+  // 选择某个项目 (Level 0 ➔ Level 1)
   const handleSelectProject = (project) => {
     setSelectedProject(project);
     try {
@@ -181,7 +217,7 @@ function UploadContent() {
     } catch { }
 
     fetchPipelinesOfProject(project.uuid);
-    setCurrentLevel(1.5);
+    navigateToLevel(1);
   };
 
   // 选中某条管线 (Level 1.5 / 搜索 / 扫码 ➔ Level 2)
@@ -200,7 +236,7 @@ function UploadContent() {
       if (resp.ok && data.success) {
         setSelectedPipeline(data.pipeline_no);
         setWeldsList(data.welds || []);
-        
+
         const projectObj = {
           uuid: data.project_uuid,
           project_name: data.project_name,
@@ -314,7 +350,7 @@ function UploadContent() {
       setStatusMsg({ zudui: sZudui.label, dadi: sDadi.label, gaimian: sGaimian.label });
     }
 
-    setCurrentLevel(3);
+    navigateToLevel(3);
   };
 
   // 焊口列表智能排序：1. 不合格优先 2. 待拍摄/进行中 3. 已完工排最后
@@ -493,55 +529,55 @@ function UploadContent() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#f4f4f4] font-mono text-[#525252] text-[14px]">
+      <div className="min-h-screen flex items-center justify-center bg-[#f4f4f4] text-[#525252] text-[14px]">
         [WeldSnap] 正在加载移动端工作台...
       </div>
     );
   }
 
   return (
-    <main className="min-h-screen bg-[#f4f4f4] p-4 font-sans select-none max-w-[600px] mx-auto flex flex-col justify-between">
+    <main className="min-h-screen bg-[#f4f4f4] p-3.5 sm:p-4 font-sans select-none max-w-[600px] w-full mx-auto flex flex-col justify-between overflow-x-hidden">
       {/* 头部条：搜索功能集成于退出按钮左侧 */}
-      <header className="flex items-center justify-between border-b border-[#e0e0e0] pb-3 mb-4 bg-[#f4f4f4] sticky top-0 z-[100] gap-2">
-        <div className="flex items-center space-x-2 min-w-0 flex-shrink-0">
+      <header className="flex items-center justify-between border-b border-[#e0e0e0] pb-2.5 mb-3 bg-[#f4f4f4] sticky top-0 z-[100] gap-1.5 w-full">
+        <div className="flex items-center space-x-1.5 min-w-0 flex-1">
           {currentLevel > 0 && (
             <button
               type="button"
               onClick={() => {
-                if (currentLevel === 3) setCurrentLevel(2);
-                else if (currentLevel === 2) setCurrentLevel(1.5);
-                else setCurrentLevel(0);
+                if (currentLevel === 3) navigateToLevel(2);
+                else if (currentLevel === 2) navigateToLevel(1);
+                else navigateToLevel(0);
               }}
-              className="h-10 px-3 bg-[#393939] hover:bg-[#4c4c4c] text-white text-[13px] font-medium cursor-pointer rounded-none border-none outline-none flex items-center"
+              className="h-8 px-2.5 bg-[#393939] hover:bg-[#4c4c4c] text-white text-[12px] font-medium cursor-pointer rounded-none border-none outline-none flex items-center flex-shrink-0"
             >
               ‹ 返回
             </button>
           )}
-          <div className="truncate">
-            <h1 className="text-[16px] font-semibold text-[#161616] truncate">
+          <div className="min-w-0 flex-1">
+            <h1 className="text-[15px] font-semibold text-[#161616] truncate leading-snug">
               {currentLevel === 0 && '照片录入'}
-              {currentLevel === 1.5 && '选取管线'}
+              {currentLevel === 1 && '选择管线'}
               {currentLevel === 2 && '选择焊口'}
               {currentLevel === 3 && '工序照片上传'}
             </h1>
-            <span className="text-[11px] text-[#525252] block truncate">
+            <span className="text-[10px] text-[#525252] block truncate">
               {currentUser.display_name || currentUser.username}
             </span>
           </div>
         </div>
 
         {/* 顶部搜索框 + 退出按钮 */}
-        <div className="flex items-center space-x-2 relative flex-1 max-w-[240px] justify-end">
-          <div className="relative flex-1 max-w-[170px]">
+        <div className="flex items-center space-x-2 flex-shrink-0">
+          <div className="relative w-[130px] sm:w-[160px]">
             <input
               type="text"
               value={pipelineQuery}
               onChange={handleSearchInputChange}
               placeholder="🔍 搜索管线号..."
-              className="w-full h-9 px-2.5 bg-white border border-[#c6c6c6] text-[#161616] text-[12px] outline-none focus:border-[#0f62fe] rounded-none placeholder-[#8d8d8d]"
+              className="w-full h-8 px-2 bg-white border border-[#c6c6c6] text-[#161616] text-[11px] outline-none focus:border-[#0f62fe] rounded-none placeholder-[#8d8d8d]"
             />
             {showSearchResults && (
-              <div className="absolute top-[38px] right-0 w-[240px] border border-[#e0e0e0] bg-white max-h-[220px] overflow-y-auto z-[9999] shadow-lg">
+              <div className="absolute top-[34px] right-0 w-[220px] border border-[#e0e0e0] bg-white max-h-[220px] overflow-y-auto z-[9999] shadow-lg">
                 {searchResults.length === 0 ? (
                   <div className="p-3 text-[12px] text-[#8d8d8d] text-center">无匹配管线</div>
                 ) : (
@@ -551,7 +587,7 @@ function UploadContent() {
                       onClick={() => handleSelectPipelineUuid(item.pipeline_uuid)}
                       className="p-2.5 border-b border-[#f4f4f4] last:border-b-0 cursor-pointer hover:bg-[#edf5ff] text-[12px]"
                     >
-                      <span className="font-mono font-semibold text-[#161616] block">{item.pipeline_no}</span>
+                      <span className="font-semibold text-[#161616] block">{item.pipeline_no}</span>
                       <span className="text-[11px] text-[#8d8d8d] block truncate">{item.project_name} | {item.construction_no}</span>
                     </div>
                   ))
@@ -562,7 +598,7 @@ function UploadContent() {
 
           <button
             onClick={handleLogout}
-            className="text-[#da1e28] text-[13px] hover:underline bg-transparent border-none cursor-pointer outline-none whitespace-nowrap flex-shrink-0"
+            className="text-[#da1e28] text-[12px] hover:underline bg-transparent border-none cursor-pointer outline-none whitespace-nowrap flex-shrink-0"
           >
             退出
           </button>
@@ -571,12 +607,12 @@ function UploadContent() {
 
       {/* 面包屑导航指示器 */}
       {currentLevel > 0 && (
-        <div className="bg-white border border-[#e0e0e0] p-2.5 mb-4 text-[12px] text-[#525252] font-mono flex items-center overflow-x-auto whitespace-nowrap">
-          <span className="cursor-pointer hover:underline text-[#0f62fe]" onClick={() => setCurrentLevel(0)}>首页</span>
+        <div className="bg-white border border-[#e0e0e0] p-2.5 mb-4 text-[12px] text-[#525252] flex items-center overflow-x-auto whitespace-nowrap">
+          <span className="cursor-pointer hover:underline text-[#0f62fe]" onClick={() => navigateToLevel(0)}>首页</span>
           {selectedProject && (
             <>
               <span className="mx-1 text-[#8d8d8d]">/</span>
-              <span className="cursor-pointer hover:underline text-[#0f62fe]" onClick={() => setCurrentLevel(1.5)}>
+              <span className="cursor-pointer hover:underline text-[#0f62fe]" onClick={() => navigateToLevel(1)}>
                 {selectedProject.construction_no || selectedProject.constructionNo}
               </span>
             </>
@@ -584,7 +620,7 @@ function UploadContent() {
           {selectedPipeline && (
             <>
               <span className="mx-1 text-[#8d8d8d]">/</span>
-              <span className="cursor-pointer hover:underline text-[#0f62fe]" onClick={() => setCurrentLevel(2)}>
+              <span className="cursor-pointer hover:underline text-[#0f62fe]" onClick={() => navigateToLevel(2)}>
                 {selectedPipeline}
               </span>
             </>
@@ -618,7 +654,7 @@ function UploadContent() {
               <div className="bg-[#edf5ff] border border-[#0f62fe] p-4 rounded-none">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-[11px] font-bold text-[#0f62fe] uppercase tracking-wider">最近一次打开的项目</span>
-                  <span className="text-[12px] font-mono text-[#0f62fe] font-semibold">{recentProject.quality_progress}% 完成</span>
+                  <span className="text-[12px] text-[#0f62fe] font-semibold">{recentProject.quality_progress}% 完成</span>
                 </div>
                 <h3 className="text-[15px] font-semibold text-[#161616] truncate">
                   {recentProject.project_name} ({recentProject.construction_no})
@@ -633,7 +669,7 @@ function UploadContent() {
                   type="button"
                   onClick={() => {
                     fetchPipelinesOfProject(recentProject.uuid);
-                    setCurrentLevel(1.5);
+                    navigateToLevel(1);
                   }}
                   className="w-full h-11 bg-[#0f62fe] hover:bg-[#0353e9] text-white text-[13px] font-medium cursor-pointer rounded-none border-none outline-none mt-1"
                 >
@@ -646,11 +682,11 @@ function UploadContent() {
             <div className="space-y-3">
               <div className="flex items-center justify-between border-b border-[#e0e0e0] pb-2">
                 <h3 className="text-[14px] font-semibold text-[#161616]">📁 施工项目列表</h3>
-                <span className="text-[11px] text-[#525252]">点击选取管线</span>
+                <span className="text-[11px] text-[#525252]">点击选择管线</span>
               </div>
 
               {loadingProjects ? (
-                <div className="p-8 text-center text-[#525252] font-mono text-[13px] bg-white border border-[#e0e0e0]">
+                <div className="p-8 text-center text-[#525252] text-[13px] bg-white border border-[#e0e0e0]">
                   加载项目中...
                 </div>
               ) : projectsList.length === 0 ? (
@@ -666,17 +702,17 @@ function UploadContent() {
                   >
                     <div className="flex items-start justify-between">
                       <div>
-                        <span className="text-[12px] font-mono text-[#0f62fe] font-semibold block">{p.construction_no}</span>
+                        <span className="text-[12px] text-[#0f62fe] font-semibold block">{p.construction_no}</span>
                         <h4 className="text-[15px] font-semibold text-[#161616] mt-0.5">{p.project_name}</h4>
                       </div>
-                      <span className="text-[12px] font-mono font-bold text-[#161616]">
+                      <span className="text-[12px] font-bold text-[#161616]">
                         {p.quality_progress}%
                       </span>
                     </div>
 
                     <div className="mt-3 flex items-center justify-between text-[11px] text-[#525252]">
-                      <span>包含 {p.pipeline_count} 条管线 / {p.weld_count} 口焊接</span>
-                      <span className="font-mono text-[#8d8d8d]">{p.status}</span>
+                      <span>包含 {p.pipeline_count} 条管线 / {p.weld_count} 个焊口</span>
+                      <span className="text-[#8d8d8d]">{p.status}</span>
                     </div>
 
                     {/* 完成率进度条 */}
@@ -693,8 +729,8 @@ function UploadContent() {
           </div>
         )}
 
-        {/* ════════════════ LEVEL 1.5: 管线选取列表 ════════════════ */}
-        {currentLevel === 1.5 && (
+        {/* ════════════════ LEVEL 1: 管线选择列表 ════════════════ */}
+        {currentLevel === 1 && (
           <div className="space-y-3">
             <div className="bg-[#edf5ff] border border-[#0f62fe] p-3 text-[13px]">
               <span className="text-[13px] text-[#0f62fe] block font-medium">已选项目</span>
@@ -706,7 +742,7 @@ function UploadContent() {
             <span className="text-[12px] text-[#525252] block">请选择目标管线号：</span>
 
             {loadingPipelines ? (
-              <div className="p-8 text-center text-[#525252] font-mono text-[18px] bg-white border border-[#e0e0e0]">
+              <div className="p-8 text-center text-[#525252] text-[18px] bg-white border border-[#e0e0e0]">
                 加载管线列表中...
               </div>
             ) : pipelinesList.length === 0 ? (
@@ -721,7 +757,7 @@ function UploadContent() {
                   className="bg-white border border-[#e0e0e0] hover:border-[#0f62fe] p-4 cursor-pointer transition-colors duration-150 flex items-center justify-between min-h-[58px]"
                 >
                   <div>
-                    <span className="text-[15px] font-mono font-bold text-[#161616] block">{pl.pipeline_no}</span>
+                    <span className="text-[15px] font-bold text-[#161616] block">{pl.pipeline_no}</span>
                     <span className="text-[11px] text-[#525252]">
                       共 {pl.weld_count} 个焊口 / 已归档完工 {pl.completed} 个
                     </span>
@@ -741,13 +777,13 @@ function UploadContent() {
             <div className="bg-[#edf5ff] border border-[#0f62fe] p-4 flex items-center justify-between">
               <div>
                 <span className="text-[11px] text-[#0f62fe] block font-medium">当前定位管线号</span>
-                <span className="text-[18px] font-mono font-bold text-[#161616]">{selectedPipeline}</span>
+                <span className="text-[18px] font-bold text-[#161616]">{selectedPipeline}</span>
                 <span className="text-[12px] text-[#525252] block mt-0.5">
                   {selectedProject?.name || selectedProject?.project_name} ({selectedProject?.constructionNo || selectedProject?.construction_no})
                 </span>
               </div>
               <button
-                onClick={() => setCurrentLevel(1.5)}
+                onClick={() => navigateToLevel(1)}
                 className="text-[18px] text-[#0f62fe] hover:underline bg-transparent border-none cursor-pointer outline-none font-medium"
               >
                 切换管线
@@ -803,14 +839,14 @@ function UploadContent() {
                       `}
                     >
                       <div className="flex items-center space-x-3">
-                        <span className="text-[16px] font-mono font-bold text-[#161616]">{w.weld_no}</span>
+                        <span className="text-[16px] font-bold text-[#161616]">{w.weld_no}</span>
                         <span className={`text-[11px] px-2 py-0.5 font-medium rounded-none ${badge.bg} ${badge.text}`}>
                           {badge.label}
                         </span>
                       </div>
 
                       {/* 三工序工况微缩标识 */}
-                      <div className="flex items-center space-x-1 text-[11px] font-mono text-[#8d8d8d]">
+                      <div className="flex items-center space-x-1 text-[11px] text-[#8d8d8d]">
                         <span className={w.photo_zudui && !w.photo_zudui.startsWith('REJECTED:') ? 'text-[#24a148] font-bold' : w.photo_zudui && w.photo_zudui.startsWith('REJECTED:') ? 'text-[#da1e28] font-bold' : ''}>组对</span>
                         <span>/</span>
                         <span className={w.photo_dadi && !w.photo_dadi.startsWith('REJECTED:') ? 'text-[#24a148] font-bold' : w.photo_dadi && w.photo_dadi.startsWith('REJECTED:') ? 'text-[#da1e28] font-bold' : ''}>打底</span>
@@ -831,7 +867,7 @@ function UploadContent() {
           <div className="space-y-4">
             <div className="bg-[#edf5ff] border border-[#0f62fe] p-3 text-[13px]">
               <span className="text-[11px] text-[#0f62fe] block">正在录入焊口照片</span>
-              <span className="text-[16px] font-mono font-bold text-[#161616]">{selectedPipeline} - {selectedWeld}</span>
+              <span className="text-[16px] font-bold text-[#161616]">{selectedPipeline} - {selectedWeld}</span>
             </div>
 
             {/* 三工序三列卡片列表 */}
@@ -857,7 +893,7 @@ function UploadContent() {
                     <div className="col-span-4 min-w-0 pr-1">
                       <span className="text-[15px] font-bold text-[#161616] block truncate">{type.name}</span>
                       <span
-                        className={`text-[12px] block mt-1 font-mono font-medium
+                        className={`text-[12px] block mt-1 font-medium
                           ${isDone
                             ? 'text-[#24a148]'
                             : isRejected
@@ -980,7 +1016,7 @@ function UploadContent() {
 
 export default function UploadPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-[#f4f4f4] font-mono text-[#525252] text-[14px]">[WeldSnap] 正在初始化工作台...</div>}>
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-[#f4f4f4] text-[#525252] text-[14px]">[WeldSnap] 正在初始化工作台...</div>}>
       <UploadContent />
     </Suspense>
   );

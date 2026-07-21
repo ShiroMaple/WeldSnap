@@ -47,7 +47,7 @@ export default function AdminLayout({ children }) {
   if (loading) {
     // 渲染骨架屏或极简加载界面，防止闪烁
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#f4f4f4] font-mono text-[#525252] text-[14px]">
+      <div className="min-h-screen flex items-center justify-center bg-[#f4f4f4] text-[#525252] text-[14px]">
         [WeldSnap] Loading workspace...
       </div>
     );

@@ -271,7 +271,7 @@ export default function PipelineTree({
               🗑️ 删除已选 ({selectedUuids.length})
             </button>
           ) : (
-            <span className="font-mono text-[12px] text-[#525252]">管线共 {pipelines.length} 条</span>
+            <span className="text-[12px] text-[#525252]">共 {pipelines.length} 条管线</span>
           )}
         </div>
       </div>
@@ -319,11 +319,11 @@ export default function PipelineTree({
                         disabled={editingSaving}
                         autoFocus
                         onClick={(e) => e.stopPropagation()}
-                        className="flex-1 h-7 px-1 bg-white border border-[#0f62fe] text-[12px] font-mono outline-none rounded-none"
+                        className="flex-1 h-7 px-1 bg-white border border-[#0f62fe] text-[12px] outline-none rounded-none"
                       />
                     ) : (
                       <span
-                        className="truncate font-mono flex-1 cursor-text"
+                        className="truncate flex-1 cursor-text font-semibold text-[#161616]"
                         title="双击编辑管线号"
                         onDoubleClick={(e) => {
                           e.stopPropagation();
@@ -343,13 +343,13 @@ export default function PipelineTree({
                         onShowQR(p.uuid);
                       }}
                       title="查看/下载当前管线二维码"
-                      className="px-1.5 py-0.5 border border-[#0f62fe] text-[#0f62fe] hover:bg-[#0f62fe] hover:text-white bg-transparent text-[11px] font-mono rounded-none cursor-pointer transition-colors duration-100"
+                      className="px-1.5 py-0.5 border border-[#0f62fe] text-[#0f62fe] hover:bg-[#0f62fe] hover:text-white bg-transparent text-[11px] font-semibold rounded-none cursor-pointer transition-colors duration-100"
                     >
                       QR
                     </button>
 
                     <span
-                      className={`text-[11px] px-1.5 py-0.5 font-mono rounded-none
+                      className={`text-[11px] px-1.5 py-0.5 font-medium rounded-none
                         ${isAllDone
                           ? 'bg-[#24a148]/10 text-[#24a148]'
                           : 'bg-black/5 text-[#525252]'

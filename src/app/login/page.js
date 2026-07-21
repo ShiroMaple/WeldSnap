@@ -138,7 +138,7 @@ export default function LoginPage() {
 
   if (!mounted) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-[#f4f4f4] font-mono text-[#525252] text-[14px]">
+      <main className="min-h-screen flex items-center justify-center bg-[#f4f4f4] text-[#525252] text-[14px]">
         [WeldSnap] Loading login portal...
       </main>
     );
@@ -151,7 +151,7 @@ export default function LoginPage() {
         {/* 顶部 Logo 与系统名称 */}
         <header className="mb-6">
           <h1 className="text-[28px] font-light leading-tight tracking-normal text-[#161616]">
-            管道焊口工序质量记录
+            管线焊口工序质量记录
           </h1>
           <p className="text-[14px] font-normal leading-normal tracking-[0.16px] text-[#525252] mt-2">
             WeldSnap
@@ -190,7 +190,7 @@ export default function LoginPage() {
             ) : (
               <div className="flex flex-col mb-4">
                 <span className="text-[12px] text-[#6f6f6f] block">当前设备账号：</span>
-                <div className="text-[18px] font-medium text-[#0f62fe] mt-1 font-mono tracking-wide">
+                <div className="text-[18px] font-medium text-[#0f62fe] mt-1 tracking-wide">
                   {savedName}
                 </div>
               </div>

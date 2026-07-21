@@ -8,7 +8,7 @@ const RealtimeQRScanner = dynamic(
   {
     ssr: false,
     loading: () => (
-      <div className="w-full h-[420px] bg-black flex items-center justify-center text-white/80 font-mono text-[13px]">
+      <div className="w-full h-[420px] bg-black flex items-center justify-center text-white/80 text-[13px]">
         [WeldSnap] 正在初始化 Web Worker 扫码引擎...
       </div>
     ),

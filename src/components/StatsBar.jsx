@@ -19,7 +19,7 @@ export default function StatsBar({ stats = { total: 0, completed: 0, pending: 0 
       <div className="flex-1 min-w-[200px] bg-[#f4f4f4] border border-[#e0e0e0] p-5 rounded-none flex flex-col justify-between">
         <div>
           <span className="text-[12px] font-normal tracking-[0.32px] text-[#525252]">焊口总数</span>
-          <div className="text-[28px] font-light text-[#161616] mt-2 font-mono">
+          <div className="text-[28px] font-light text-[#161616] mt-2">
             {total}
           </div>
         </div>
@@ -32,7 +32,7 @@ export default function StatsBar({ stats = { total: 0, completed: 0, pending: 0 
       <div className="flex-1 min-w-[200px] bg-[#f4f4f4] border border-[#e0e0e0] p-5 rounded-none flex flex-col justify-between">
         <div>
           <span className="text-[12px] font-normal tracking-[0.32px] text-[#525252]">待录入工序数</span>
-          <div className="text-[28px] font-light text-[#da1e28] mt-2 font-mono">
+          <div className="text-[28px] font-light text-[#da1e28] mt-2">
             {pending}
           </div>
         </div>
@@ -45,7 +45,7 @@ export default function StatsBar({ stats = { total: 0, completed: 0, pending: 0 
       <div className="flex-1 min-w-[200px] bg-[#f4f4f4] border border-[#e0e0e0] p-5 rounded-none flex flex-col justify-between">
         <div>
           <span className="text-[12px] font-normal tracking-[0.32px] text-[#525252]">已完成工序数</span>
-          <div className="text-[28px] font-light text-[#24a148] mt-2 font-mono">
+          <div className="text-[28px] font-light text-[#24a148] mt-2">
             {completed}
           </div>
         </div>
@@ -58,7 +58,7 @@ export default function StatsBar({ stats = { total: 0, completed: 0, pending: 0 
       <div className="flex-1 min-w-[200px] bg-[#f4f4f4] border border-[#e0e0e0] p-5 rounded-none flex flex-col justify-between">
         <div>
           <span className="text-[12px] font-normal tracking-[0.32px] text-[#525252]">质量记录完成进度</span>
-          <div className="text-[28px] font-light text-[#0f62fe] mt-2 font-mono">
+          <div className="text-[28px] font-light text-[#0f62fe] mt-2">
             {ratio}%
           </div>
         </div>

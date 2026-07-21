@@ -66,7 +66,7 @@ function QrCodesPrintContent() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-white font-mono text-[#525252] text-[14px]">
+      <div className="min-h-screen flex items-center justify-center bg-white text-[#525252] text-[14px]">
         [WeldSnap] Generating printable layout...
       </div>
     );
@@ -89,7 +89,7 @@ function QrCodesPrintContent() {
         <div>
           <h1 className="text-[18px] font-semibold text-[#161616]">管线二维码批量打印页</h1>
           <p className="text-[12px] text-[#525252] mt-1">
-            当前绑定局域网服务器地址: <span className="font-mono text-[#0f62fe]">http://{serverIP}:{port}</span>
+            当前绑定局域网服务器地址: <span className="text-[#0f62fe] font-semibold">http://{serverIP}:{port}</span>
           </p>
         </div>
         <div className="flex gap-3">
@@ -110,7 +110,7 @@ function QrCodesPrintContent() {
 
       {/* 二维码打印格栅 */}
       {items.length === 0 ? (
-        <div className="text-center py-16 text-[#8d8d8d] text-[14px] font-mono">
+        <div className="text-center py-16 text-[#8d8d8d] text-[14px]">
           暂无管线数据，请确保已勾选或管线不为空。
         </div>
       ) : (
@@ -127,10 +127,10 @@ function QrCodesPrintContent() {
                 className="w-48 h-48 bg-white border border-[#e0e0e0] p-1 print:w-44 print:h-44"
               />
               <div className="mt-4 w-full">
-                <span className="block font-mono text-[15px] font-bold text-[#161616] truncate">
+                <span className="block text-[15px] font-bold text-[#161616] truncate">
                   管线号: {item.pipeline_no}
                 </span>
-                <span className="block font-mono text-[9px] text-[#8d8d8d] truncate mt-1.5 print:text-[8px]">
+                <span className="block text-[9px] text-[#8d8d8d] truncate mt-1.5 print:text-[8px]">
                   {item.url}
                 </span>
               </div>
@@ -140,8 +140,8 @@ function QrCodesPrintContent() {
       )}
 
       {/* 打印专用底栏 */}
-      <footer className="hidden print:block text-center text-[10px] text-[#8d8d8d] mt-12 font-mono border-t border-dashed border-[#ccc] pt-4">
-        WeldSnap V2.0 管道焊口照片拍照系统 — 二维码打印凭证
+      <footer className="hidden print:block text-center text-[10px] text-[#8d8d8d] mt-12 border-t border-dashed border-[#ccc] pt-4">
+        WeldSnap V2.0 管线焊口照片拍照系统 — 二维码打印凭证
       </footer>
     </div>
   );
@@ -149,7 +149,7 @@ function QrCodesPrintContent() {
 
 export default function QrCodesPrintPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-white font-mono text-[#525252] text-[14px]">[WeldSnap] Loading printable layout...</div>}>
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-white text-[#525252] text-[14px]">[WeldSnap] Loading printable layout...</div>}>
       <QrCodesPrintContent />
     </Suspense>
   );

@@ -216,6 +216,43 @@ export default function WeldMatrix({
     }
   };
 
+  // 彻底删除照片 (兼删 OSS 对象)
+  const [deletingPhoto, setDeletingPhoto] = useState(false);
+  const handleDeletePhoto = async () => {
+    if (!viewPhotoInfo.typeKey || !viewPhotoInfo.pipelineNo || !viewPhotoInfo.weldNo) return;
+
+    const typeCN = viewPhotoInfo.typeLabel || viewPhotoInfo.typeKey;
+    const confirmText = `⚠️ 危险操作确认：\n确定彻底删除【${viewPhotoInfo.pipelineNo}】管线 /【${viewPhotoInfo.weldNo}】焊口 的 [${typeCN}] 工序照片？\n\n此操作将同时彻底删除阿里云 OSS 云端存储的对象，且数据库相关字段将被置空，不可恢复！`;
+
+    if (!confirm(confirmText)) return;
+
+    setDeletingPhoto(true);
+    try {
+      const resp = await fetch('/api/admin/photo/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pipeline_no: viewPhotoInfo.pipelineNo,
+          weld_no: viewPhotoInfo.weldNo,
+          photo_type: viewPhotoInfo.typeKey,
+        }),
+      });
+      const data = await resp.json();
+      if (resp.ok && data.success) {
+        alert('照片及其 OSS 云端对象已彻底删除');
+        setViewPhotoPath(null);
+        onBusyChange(false);
+        if (onRefresh) onRefresh();
+      } else {
+        alert(data.error || '删除照片失败');
+      }
+    } catch {
+      alert('网络连接失败，删除操作中止');
+    } finally {
+      setDeletingPhoto(false);
+    }
+  };
+
   const handleDownloadPhoto = async () => {
     if (!viewPhotoPath) return;
     try {
@@ -541,14 +578,14 @@ export default function WeldMatrix({
             <span>/</span>
             <button onClick={handleInvertSelect} className="hover:underline cursor-pointer">反选</button>
           </div>
-          <span className="text-[12px] text-[#525252] font-mono">焊口共 {records.length} 个</span>
+          <span className="text-[12px] text-[#525252]">共 {records.length} 个焊口</span>
         </div>
       </div>
 
       {/* 焊口数据列表 */}
       <div className="flex-1 overflow-auto p-6 relative">
         {records.length === 0 ? (
-          <div className="h-full flex items-center justify-center text-[#8d8d8d] text-[14px] font-mono select-none">
+          <div className="h-full flex items-center justify-center text-[#8d8d8d] text-[14px] select-none">
             该管线号下暂无焊口数据，请在右侧新增或通过左侧导入 Excel
           </div>
         ) : (
@@ -566,7 +603,7 @@ export default function WeldMatrix({
                   >
                     <div className="flex items-center gap-1.5">
                       <span>焊口号</span>
-                      <span className="text-[11px] font-mono text-[#525252]">
+                      <span className="text-[11px] text-[#525252]">
                         {sortKey === 'weld_no' && sortDirection === 'asc' ? '▲' : sortKey === 'weld_no' && sortDirection === 'desc' ? '▼' : '⇅'}
                       </span>
                     </div>
@@ -582,7 +619,7 @@ export default function WeldMatrix({
                   >
                     <div className="flex items-center gap-1.5">
                       <span>最近上传时间</span>
-                      <span className="text-[11px] font-mono text-[#525252]">
+                      <span className="text-[11px] text-[#525252]">
                         {sortKey === 'uploaded_at' && sortDirection === 'asc' ? '▲' : sortKey === 'uploaded_at' && sortDirection === 'desc' ? '▼' : '⇅'}
                       </span>
                     </div>
@@ -644,7 +681,7 @@ export default function WeldMatrix({
                           className="w-4 h-4 cursor-pointer rounded-none accent-[#0f62fe]"
                         />
                       </td>
-                      <td className="py-3.5 px-4 font-mono font-medium flex items-center gap-2">
+                      <td className="py-3.5 px-4 font-medium flex items-center gap-2">
                         {editingUuid === r.uuid ? (
                           <input
                             type="text"
@@ -658,12 +695,12 @@ export default function WeldMatrix({
                             disabled={editingSaving}
                             autoFocus
                             onClick={(e) => e.stopPropagation()}
-                            className="h-7 px-1 bg-white border border-[#0f62fe] text-[12px] font-mono outline-none rounded-none w-28"
+                            className="h-7 px-1 bg-white border border-[#0f62fe] text-[12px] outline-none rounded-none w-28"
                           />
                         ) : (
                           <>
                             <span
-                              className={(currentUser.role === 'admin' || currentUser.role === 'project_admin') ? "cursor-text hover:underline" : ""}
+                              className={(currentUser.role === 'admin' || currentUser.role === 'project_admin') ? "cursor-text hover:underline font-semibold text-[#161616]" : ""}
                               title={(currentUser.role === 'admin' || currentUser.role === 'project_admin') ? "双击编辑焊口号" : ""}
                               onDoubleClick={(e) => {
                                 if (currentUser.role === 'admin' || currentUser.role === 'project_admin') {
@@ -695,7 +732,7 @@ export default function WeldMatrix({
                         {cellRender('photo_gaimian', 'gaimian', '盖面工序')}
                       </td>
                       <td className="py-3.5 px-4 text-[#525252]">{r.uploaded_by || '-'}</td>
-                      <td className="py-3.5 pl-4 text-[#525252] font-mono">{r.uploaded_at || '-'}</td>
+                      <td className="py-3.5 pl-4 text-[#525252]">{r.uploaded_at || '-'}</td>
                     </tr>
                   );
                 })}
@@ -744,7 +781,7 @@ export default function WeldMatrix({
                 <h3 className="text-[16px] font-semibold text-[#161616]">
                   {viewPhotoInfo.typeLabel} 照片详情
                 </h3>
-                <span className="text-[12px] text-[#525252] font-mono">
+                <span className="text-[12px] text-[#525252]">
                   管线: {viewPhotoInfo.pipelineNo} | 焊口: {viewPhotoInfo.weldNo}
                   {viewPhotoPath.startsWith('REJECTED:') && (
                     <span className="text-[#da1e28] ml-2 font-semibold"> (❌ 需重传)</span>
@@ -769,11 +806,12 @@ export default function WeldMatrix({
             </div>
 
             {/* Modal Footer Control */}
-            <div className="flex justify-end gap-3 px-6 py-4 border-t border-[#e0e0e0] select-none">
+            <div className="flex justify-end items-center gap-3 px-6 py-4 border-t border-[#e0e0e0] select-none">
               {!viewPhotoPath.startsWith('REJECTED:') && (
                 <button
+                  type="button"
                   onClick={handleRejectPhoto}
-                  className="h-10 px-5 bg-[#da1e28] hover:bg-[#b21922] text-white text-[13px] cursor-pointer rounded-none border-none outline-none font-medium mr-auto"
+                  className="h-10 px-4 bg-[#da1e28] hover:bg-[#b21922] text-white text-[13px] cursor-pointer rounded-none border-none outline-none font-medium mr-auto"
                 >
                   标记不合格 (需重传)
                 </button>
@@ -781,6 +819,7 @@ export default function WeldMatrix({
 
               {viewPhotoPath.startsWith('REJECTED:') && (
                 <button
+                  type="button"
                   onClick={() => {
                     setViewPhotoPath(null);
                     onBusyChange(false);
@@ -789,19 +828,32 @@ export default function WeldMatrix({
                       handleUploadClick(viewPhotoInfo.pipelineNo, viewPhotoInfo.weldNo, viewPhotoInfo.typeKey, targetWeld.uuid);
                     }
                   }}
-                  className="h-10 px-5 bg-[#da1e28] hover:bg-[#b21922] text-white text-[13px] cursor-pointer rounded-none border-none outline-none font-medium mr-auto"
+                  className="h-10 px-4 bg-[#da1e28] hover:bg-[#b21922] text-white text-[13px] cursor-pointer rounded-none border-none outline-none font-medium mr-auto"
                 >
                   重新上传覆盖照片
                 </button>
               )}
 
+              {/* 彻底删除照片及 OSS 云端对象按键 */}
               <button
+                type="button"
+                onClick={handleDeletePhoto}
+                disabled={deletingPhoto}
+                className="h-10 px-4 bg-[#393939] hover:bg-[#da1e28] text-white text-[13px] cursor-pointer rounded-none border-none outline-none font-medium transition-colors duration-150 flex items-center space-x-1 disabled:opacity-50"
+                title="删除数据库记录并同时彻底清除阿里云 OSS 对象"
+              >
+                <span>🗑️ {deletingPhoto ? '删除中...' : '彻底删除照片'}</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={handleClosePhotoModal}
                 className="h-10 px-5 border border-[#c6c6c6] bg-white hover:bg-[#e8e8e8] text-[13px] text-[#161616] cursor-pointer rounded-none"
               >
                 关闭
               </button>
               <button
+                type="button"
                 onClick={handleDownloadPhoto}
                 className="h-10 px-6 bg-[#0f62fe] hover:bg-[#0353e9] text-white text-[13px] cursor-pointer rounded-none border-none outline-none font-medium"
               >

@@ -678,14 +678,14 @@ export default function AdminPage() {
                     <tbody className="divide-y divide-[#e0e0e0] text-[#161616]">
                       {sortedProjects.length === 0 ? (
                         <tr>
-                          <td colSpan="9" className="py-10 text-center text-[#8d8d8d] font-mono">
+                          <td colSpan="9" className="py-10 text-center text-[#8d8d8d]">
                             暂无匹配的项目。请点击右上角“新建项目”开始。
                           </td>
                         </tr>
                       ) : (
                         sortedProjects.map((p) => (
                           <tr key={p.uuid} className="hover:bg-[#f4f4f4] cursor-pointer transition-colors duration-100" onClick={() => handleSelectProject(p)}>
-                            <td className="py-3.5 px-4 font-mono font-semibold text-[#0f62fe] hover:underline">
+                            <td className="py-3.5 px-4 font-semibold text-[#0f62fe] hover:underline">
                               {p.construction_no}
                             </td>
                             <td className="py-3.5 px-4 font-medium text-[#161616]">
@@ -694,8 +694,8 @@ export default function AdminPage() {
                             <td className="py-3.5 px-4 text-[#525252] truncate max-w-[200px]" title={p.remark}>
                               {p.remark || '-'}
                             </td>
-                            <td className="py-3.5 px-4 font-mono text-center">{p.pipeline_count}</td>
-                            <td className="py-3.5 px-4 font-mono text-center">{p.weld_count}</td>
+                            <td className="py-3.5 px-4 text-center">{p.pipeline_count}</td>
+                            <td className="py-3.5 px-4 text-center">{p.weld_count}</td>
                             <td className="py-3.5 px-4 text-center">
                               <span
                                 className={`inline-block px-2 py-0.5 text-[11px] font-medium
@@ -710,7 +710,7 @@ export default function AdminPage() {
                             </td>
                             <td className="py-3.5 px-4">
                               <div className="flex items-center gap-3">
-                                <span className="font-mono text-[12px] font-semibold w-8">{p.quality_progress}%</span>
+                                <span className="text-[12px] font-semibold w-8">{p.quality_progress}%</span>
                                 <div className="w-24 h-1.5 bg-[#e0e0e0] rounded-none overflow-hidden">
                                   <div
                                     className="bg-[#24a148] h-full"
@@ -719,7 +719,7 @@ export default function AdminPage() {
                                 </div>
                               </div>
                             </td>
-                            <td className="py-3.5 px-4 font-mono text-[#525252]">{p.created_at}</td>
+                            <td className="py-3.5 px-4 text-[#525252]">{p.created_at}</td>
                             <td className="py-3.5 px-4 text-right" onClick={(e) => e.stopPropagation()}>
                               <div className="flex justify-end gap-2">
                                 <button
@@ -755,9 +755,9 @@ export default function AdminPage() {
                   >
                     项目控制台
                   </button>
-                  <span className="text-[#8d8d8d] font-mono">/</span>
+                  <span className="text-[#8d8d8d]">/</span>
                   <span className="text-[#161616] font-semibold flex items-center gap-1.5">
-                    <span className="font-mono text-[#0f62fe] bg-[#edf5ff] px-2 py-0.5">{selectedProject.project_name}</span>
+                    <span className="text-[#0f62fe] bg-[#edf5ff] px-2 py-0.5 font-semibold">{selectedProject.project_name}</span>
                     <span className="text-[#525252] font-normal">({selectedProject.construction_no})</span>
                   </span>
                 </div>
@@ -846,7 +846,7 @@ export default function AdminPage() {
                         </>
                       ) : (
                         <div className="flex justify-between items-center w-full">
-                          <span className="text-[12px] text-[#8d8d8d] font-mono">请从左侧选择管线号查看焊口进度</span>
+                          <span className="text-[12px] text-[#8d8d8d]">请从左侧选择管线号查看焊口进度</span>
                           <button
                             onClick={() => {
                               fetchProjects();
@@ -916,8 +916,8 @@ export default function AdminPage() {
                   <tbody className="divide-y divide-[#e0e0e0] text-[#161616]">
                     {users.map((u) => (
                       <tr key={u.id} className="hover:bg-[#f4f4f4]">
-                        <td className="py-3 pr-4 font-mono">{u.id}</td>
-                        <td className="py-3 px-4 font-mono font-medium">{u.username}</td>
+                        <td className="py-3 pr-4">{u.id}</td>
+                        <td className="py-3 px-4 font-medium">{u.username}</td>
                         <td className="py-3 px-4">{u.display_name || '-'}</td>
                         <td className="py-3 px-4">
                           <span
@@ -933,8 +933,8 @@ export default function AdminPage() {
                             {u.role === 'admin' ? '系统管理员' : u.role === 'project_admin' ? '项目管理员' : '施工员'}
                           </span>
                         </td>
-                        <td className="py-3 px-4 font-mono text-[#525252]">{u.created_at}</td>
-                        <td className="py-3 px-4 font-mono text-[#525252]">{u.last_login_at || '-'}</td>
+                        <td className="py-3 px-4 text-[#525252]">{u.created_at}</td>
+                        <td className="py-3 px-4 text-[#525252]">{u.last_login_at || '-'}</td>
                         <td className="py-3 pl-4 text-right">
                           <div className="flex justify-end gap-2">
                             <button
@@ -944,7 +944,7 @@ export default function AdminPage() {
                               编辑
                             </button>
                             {u.username === 'admin' ? (
-                              <span className="text-[#8d8d8d] text-[11px] font-mono leading-7">固有账户</span>
+                              <span className="text-[#8d8d8d] text-[11px] leading-7">固有账户</span>
                             ) : (
                               <button
                                 onClick={() => handleDeleteUser(u.id)}
@@ -980,7 +980,7 @@ export default function AdminPage() {
                 <div className="space-y-6">
                   <div className="border-b border-[#e0e0e0] pb-4">
                     <span className="text-[12px] text-[#525252] block mb-1">后端文件管理模式</span>
-                    <span className="text-[14px] font-mono font-semibold text-[#0f62fe] bg-[#edf5ff] px-2.5 py-1 inline-block">
+                    <span className="text-[14px] font-semibold text-[#0f62fe] bg-[#edf5ff] px-2.5 py-1 inline-block">
                       {settings.config.exportMode} (云端对象存储桶直传)
                     </span>
                     <p className="text-[12px] text-[#8d8d8d] mt-2">
@@ -990,7 +990,7 @@ export default function AdminPage() {
 
                   <div className="border-b border-[#e0e0e0] pb-4">
                     <span className="text-[12px] text-[#525252] block mb-1">云端 OSS 桶详情 (已脱敏)</span>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2 font-mono text-[13px] bg-[#f4f4f4] p-4 border border-[#e0e0e0]">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2 text-[13px] bg-[#f4f4f4] p-4 border border-[#e0e0e0]">
                       <div><span className="text-[#525252]">Bucket:</span> {settings.config.oss.bucket || '-'}</div>
                       <div><span className="text-[#525252]">Region:</span> {settings.config.oss.region || '-'}</div>
                       <div className="md:col-span-2 truncate" title={settings.config.oss.endpoint}>
@@ -1006,7 +1006,7 @@ export default function AdminPage() {
                     <span className="text-[12px] text-[#525252] block mb-1.5">当前局域网服务访问地址</span>
                     <div className="space-y-1">
                       {settings.serverIPs.map((ip) => (
-                        <div key={ip} className="font-mono text-[14px] text-[#161616]">
+                        <div key={ip} className="text-[14px] text-[#161616]">
                           • <a href={`http://${ip}:${settings.port}`} target="_blank" className="text-[#0f62fe] hover:underline font-semibold">http://{ip}:{settings.port}</a>
                         </div>
                       ))}
@@ -1105,7 +1105,7 @@ export default function AdminPage() {
                       disabled={!compressEnabled}
                       className="w-48 accent-[#0f62fe] disabled:opacity-40"
                     />
-                    <span className="text-[14px] font-mono font-medium text-[#161616] w-12">
+                    <span className="text-[14px] font-medium text-[#161616] w-12">
                       {Math.round(compressQuality * 100)}%
                     </span>
                   </div>
@@ -1116,7 +1116,7 @@ export default function AdminPage() {
                     {compressEnabled ? (
                       <>
                         手机照片（约 5–10MB）压缩后约{' '}
-                        <span className="font-mono font-medium text-[#0f62fe]">
+                        <span className="font-medium text-[#0f62fe]">
                           {Math.round(compressMaxWidth * compressMaxHeight * compressQuality * 3 / 8 / 1024 * 0.15)}–{Math.round(compressMaxWidth * compressMaxHeight * compressQuality * 3 / 8 / 1024 * 0.35)}KB
                         </span>
                         ，分辨率 {compressMaxWidth}×{compressMaxHeight}，质量 {Math.round(compressQuality * 100)}%
@@ -1356,7 +1356,7 @@ export default function AdminPage() {
             />
 
             {importStatus && (
-              <div className="mt-3 p-2 bg-[#edf5ff] text-[#0f62fe] text-[12px] font-mono">
+              <div className="mt-3 p-2 bg-[#edf5ff] text-[#0f62fe] text-[12px]">
                 {importStatus}
               </div>
             )}
@@ -1366,7 +1366,7 @@ export default function AdminPage() {
                 {importResult.success ? (
                   <div className="p-3 bg-[#24a148]/10 border border-[#24a148] text-[#24a148] text-[13px]">
                     <strong>🎉 导入成功！</strong>
-                    <span className="font-mono ml-2">行数: {importResult.total} | 新增: {importResult.inserted} | 跳过: {importResult.skipped}</span>
+                    <span className="ml-2">行数: {importResult.total} | 新增: {importResult.inserted} | 跳过: {importResult.skipped}</span>
                   </div>
                 ) : (
                   <div className="p-3 bg-[#da1e28]/10 border border-[#da1e28] text-[#da1e28] text-[13px]">
@@ -1421,22 +1421,22 @@ export default function AdminPage() {
               </button>
             </div>
 
-            <div className="font-mono font-semibold text-[15px] text-[#161616] mb-4 text-left">
+            <div className="font-semibold text-[15px] text-[#161616] mb-4 text-left">
               管线号: {qrPipelineNo}
             </div>
 
             <div className="w-64 h-64 mx-auto bg-white border border-[#e0e0e0] flex items-center justify-center p-2">
               {qrLoading ? (
-                <div className="text-[12px] text-[#8d8d8d] font-mono">正在生成二维码...</div>
+                <div className="text-[12px] text-[#8d8d8d]">正在生成二维码...</div>
               ) : qrData.qr ? (
                 <img src={qrData.qr} alt={qrPipelineNo} className="w-full h-full object-contain" />
               ) : (
-                <div className="text-[12px] text-[#da1e28] font-mono">生成失败</div>
+                <div className="text-[12px] text-[#da1e28]">生成失败</div>
               )}
             </div>
 
             {!qrLoading && qrData.url && (
-              <div className="mt-3 text-[11px] text-[#8d8d8d] font-mono break-all text-left">
+              <div className="mt-3 text-[11px] text-[#8d8d8d] break-all text-left">
                 链接: {qrData.url}
               </div>
             )}

@@ -296,7 +296,7 @@ export function RealtimeQRScanner({ onMatchedUuid, onClose }) {
               <span>✅ 识别成功！正在加载管线数据...</span>
             </div>
           ) : processingPhoto ? (
-            <div className="bg-[#0f62fe] text-white px-4 py-2 text-[13px] font-mono">
+            <div className="bg-[#0f62fe] text-white px-4 py-2 text-[13px]">
               [WeldSnap] 正在通过 Web Worker 解码照片...
             </div>
           ) : cameraError ? (
@@ -304,7 +304,7 @@ export function RealtimeQRScanner({ onMatchedUuid, onClose }) {
               {cameraError}
             </div>
           ) : (
-            <div className="bg-black/60 px-4 py-2 text-white/90 text-[12px] font-mono inline-block backdrop-blur-md border border-white/20">
+            <div className="bg-black/60 px-4 py-2 text-white/90 text-[12px] inline-block backdrop-blur-md border border-white/20">
               将管线二维码对准中央框体，识别成功将自动跳转
             </div>
           )}
