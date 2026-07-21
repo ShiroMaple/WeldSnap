@@ -150,17 +150,20 @@ export default function LoginPage() {
 
         {/* 顶部 Logo 与系统名称 */}
         <header className="mb-6">
-          <img
-            src="/logo_zpje.jpg"
-            alt="Logo"
-            className="h-10 w-auto object-contain mb-3 border border-[#e0e0e0] p-0.5 bg-white"
-          />
+          <div className="flex items-center gap-3 mb-3">
+            <img
+              src="/logo_zpje.jpg"
+              alt="Logo"
+              className="h-10 w-auto object-contain border border-[#e0e0e0] p-0.5 bg-white"
+            />
+            <p className="text-[18px] font-normal leading-normal tracking-[0.16px] text-[#525252]">
+              ZPJE_WeldSnap
+            </p>
+          </div>
+
           <h1 className="text-[28px] font-light leading-tight tracking-normal text-[#161616]">
             管线焊口工序质量记录
           </h1>
-          <p className="text-[14px] font-normal leading-normal tracking-[0.16px] text-[#525252] mt-2">
-            WeldSnap
-          </p>
         </header>
 
         {/* 提示信息区域 */}
@@ -194,7 +197,7 @@ export default function LoginPage() {
               </div>
             ) : (
               <div className="flex flex-col mb-4">
-                <span className="text-[12px] text-[#6f6f6f] block">当前设备账号：</span>
+                <span className="text-[12px] text-[#6f6f6f] block">当前设备/浏览器的简易登录身份：</span>
                 <div className="text-[18px] font-medium text-[#0f62fe] mt-1 tracking-wide">
                   {savedName}
                 </div>

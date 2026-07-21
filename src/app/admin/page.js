@@ -12,7 +12,7 @@
  *       支持直接网页端扫码、直传、驳回重传、批量删除熔断和 JSZip+FileSaver 客户端零服务器负载批量打包。
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import StatsBar from '@/components/StatsBar';
 import PipelineTree from '@/components/PipelineTree';
 import WeldMatrix from '@/components/WeldMatrix';
