@@ -738,6 +738,58 @@ function searchPipelines(keyword) {
   `).all('%' + keyword + '%');
 }
 
+function getProjectExportRecords(projectUuid, pipelineUuids = []) {
+  const project = getProjectByUuid(projectUuid);
+  if (!project) return { project: null, records: [] };
+
+  let sql = `
+    SELECT
+      w.uuid as weld_uuid,
+      w.weld_no,
+      w.create_source,
+      w.photo_zudui,
+      w.photo_dadi,
+      w.photo_gaimian,
+      w.uploaded_by,
+      w.uploaded_at,
+      p.uuid as pipeline_uuid,
+      p.pipeline_no,
+      pr.uuid as project_uuid,
+      pr.project_name,
+      pr.construction_no
+    FROM weld_records w
+    JOIN pipelines p ON w.pipeline_id = p.id
+    JOIN projects pr ON p.project_id = pr.id
+    WHERE pr.id = ?
+  `;
+
+  const params = [project.id];
+
+  if (Array.isArray(pipelineUuids) && pipelineUuids.length > 0) {
+    const placeholders = pipelineUuids.map(() => '?').join(',');
+    sql += ` AND p.uuid IN (${placeholders})`;
+    params.push(...pipelineUuids);
+  }
+
+  const records = db.prepare(sql).all(...params);
+
+  records.sort((a, b) => {
+    const pipelineCmp = (a.pipeline_no || '').localeCompare(b.pipeline_no || '', undefined, { numeric: true, sensitivity: 'base' });
+    if (pipelineCmp !== 0) return pipelineCmp;
+
+    const valA = (a.weld_no || '').trim();
+    const valB = (b.weld_no || '').trim();
+    const isNumA = /^\d+$/.test(valA);
+    const isNumB = /^\d+$/.test(valB);
+    if (isNumA && isNumB) return Number(valA) - Number(valB);
+    if (isNumA && !isNumB) return -1;
+    if (!isNumA && isNumB) return 1;
+    return valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
+  });
+
+  return { project, records };
+}
+
 // ─── 系统设置 ──────────────────────────────────────────
 
 const DEFAULT_SETTINGS = {
@@ -806,6 +858,7 @@ module.exports = {
   bulkDelete,
   importWeldRecords,
   exportProjectData,
+  getProjectExportRecords,
 
   // Settings
   getSetting,

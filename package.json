@@ -13,6 +13,7 @@
     "ali-oss": "^6.21.0",
     "bcryptjs": "^2.4.3",
     "date-fns": "^4.1.0",
+    "exceljs": "^4.4.0",
     "file-saver": "^2.0.5",
     "html5-qrcode": "^2.3.8",
     "jszip": "^3.10.1",

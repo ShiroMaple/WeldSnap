@@ -67,7 +67,9 @@ export default function AdminPage() {
   const [pipelines, setPipelines] = useState([]);
   const [selectedPipelineUuid, setSelectedPipelineUuid] = useState('');
   const [selectedPipelineNo, setSelectedPipelineNo] = useState('');
+  const [selectedPipelineUuids, setSelectedPipelineUuids] = useState([]);
   const [weldRecords, setWeldRecords] = useState([]);
+  const [exportingExcel, setExportingExcel] = useState(false);
 
   // 焊口过滤条件
   const [filterWeld, setFilterWeld] = useState('');
@@ -483,6 +485,57 @@ export default function AdminPage() {
     e.target.value = '';
   };
 
+  // ─── 包含照片与模板的定制化 Excel 导出 ─────────────────
+  const handleCustomExcelExport = async () => {
+    if (!selectedProjectUuid || exportingExcel) return;
+    setExportingExcel(true);
+    try {
+      const resp = await fetch(`/api/admin/projects/${selectedProjectUuid}/export-excel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pipeline_uuids: selectedPipelineUuids }),
+      });
+
+      if (!resp.ok) {
+        const errJson = await resp.json().catch(() => ({}));
+        alert(errJson.error || '导出数据失败');
+        return;
+      }
+
+      const blob = await resp.blob();
+      const contentDisposition = resp.headers.get('Content-Disposition') || '';
+      let fileName = '';
+
+      const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+      if (utf8Match && utf8Match[1]) {
+        fileName = decodeURIComponent(utf8Match[1]);
+      } else {
+        const normalMatch = contentDisposition.match(/filename="([^"]+)"/i);
+        if (normalMatch && normalMatch[1]) {
+          fileName = decodeURIComponent(normalMatch[1]);
+        }
+      }
+
+      if (!fileName) {
+        const safeProjectName = selectedProject?.project_name || '项目';
+        fileName = `${safeProjectName}_管道焊接过程质量管理基本信息.xlsx`;
+      }
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert('网络请求失败，无法导出数据: ' + err.message);
+    } finally {
+      setExportingExcel(false);
+    }
+  };
+
   // ─── 成员管理逻辑 ──────────────────────────────────────
   const handleAddUser = async (e) => {
     e.preventDefault();
@@ -811,6 +864,7 @@ export default function AdminPage() {
                       fetchStats(selectedProjectUuid);
                       fetchPipelines(selectedProjectUuid);
                     }}
+                    onSelectionChange={(uuids) => setSelectedPipelineUuids(uuids)}
                     currentUser={currentUser}
                   />
 
@@ -1459,15 +1513,19 @@ export default function AdminPage() {
                   📥 下载导入模板
                 </button>
                 <button
-                  onClick={() => {
-                    if (selectedProjectUuid) {
-                      window.open(`/api/admin/projects/${selectedProjectUuid}/export`, '_blank');
-                    }
-                  }}
-                  disabled={!selectedProjectUuid}
-                  className="h-8 px-4 bg-[#f4f4f4] hover:bg-[#e0e0e0] text-[#161616] text-[12px] cursor-pointer border border-[#c6c6c6] rounded-none disabled:opacity-40 disabled:cursor-not-allowed"
+                  type="button"
+                  onClick={handleCustomExcelExport}
+                  disabled={!selectedProjectUuid || exportingExcel}
+                  className="h-8 px-4 bg-[#0f62fe] hover:bg-[#0353e9] text-white text-[12px] cursor-pointer border-none outline-none rounded-none font-medium disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
                 >
-                  📊 导出当前项目数据
+                  <span>📊</span>
+                  <span>
+                    {exportingExcel
+                      ? '正在生成包含照片的 Excel...'
+                      : selectedPipelineUuids.length > 0
+                      ? `导出已选 ${selectedPipelineUuids.length} 条管线数据`
+                      : '导出项目完整数据'}
+                  </span>
                 </button>
               </div>
               <button

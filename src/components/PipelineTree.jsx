@@ -21,6 +21,7 @@ export default function PipelineTree({
   onShowQR = () => { },
   onRefresh = () => { },
   onBusyChange = () => { },
+  onSelectionChange = () => { },
   currentUser = {},
 }) {
   const [filterQuery, setFilterQuery] = useState('');
@@ -41,24 +42,31 @@ export default function PipelineTree({
   );
 
   // 2. 选择逻辑
+  const updateSelection = (newUuids) => {
+    setSelectedUuids(newUuids);
+    if (onSelectionChange) {
+      onSelectionChange(newUuids);
+    }
+  };
+
   const handleToggleSelect = (uuid) => {
-    setSelectedUuids((prev) =>
-      prev.includes(uuid) ? prev.filter((id) => id !== uuid) : [...prev, uuid]
-    );
+    const next = selectedUuids.includes(uuid)
+      ? selectedUuids.filter((id) => id !== uuid)
+      : [...selectedUuids, uuid];
+    updateSelection(next);
   };
 
   const handleSelectAll = () => {
-    setSelectedUuids(filtered.map((p) => p.uuid));
+    updateSelection(filtered.map((p) => p.uuid));
   };
 
   const handleDeselectAll = () => {
-    setSelectedUuids([]);
+    updateSelection([]);
   };
 
   const handleToggleInvert = () => {
-    setSelectedUuids((prev) =>
-      filtered.map((p) => p.uuid).filter((uuid) => !prev.includes(uuid))
-    );
+    const next = filtered.map((p) => p.uuid).filter((uuid) => !selectedUuids.includes(uuid));
+    updateSelection(next);
   };
 
   // 3. 新建管线
