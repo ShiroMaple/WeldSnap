@@ -797,6 +797,10 @@ const DEFAULT_SETTINGS = {
   compress_max_width: '1920',
   compress_max_height: '1080',
   compress_quality: '0.8',
+  excel_compress_enabled: '0',
+  excel_compress_max_width: '800',
+  excel_compress_max_height: '600',
+  excel_compress_quality: '0.8',
   server_public_url: '',
   log_level: 'info',
 };
@@ -820,6 +824,71 @@ function setSetting(key, value) {
   logger.info({ msg: 'db.setting_updated', key });
 }
 
+function importProjects(rows) {
+  let inserted = 0;
+  let skipped = 0;
+  const skippedDetails = [];
+
+  db.exec('BEGIN');
+  try {
+    const findProjectStmt = db.prepare('SELECT id FROM projects WHERE construction_no = ?');
+    const insertProjectStmt = db.prepare(`
+      INSERT INTO projects (uuid, construction_no, project_name, remark, pipeline_prefix, weld_prefix)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+
+    const seenConstructionNos = new Set();
+
+    rows.forEach((r, idx) => {
+      const lineNo = idx + 2;
+      const constructionNo = String(r.construction_no || r.施工号 || r.项目施工号 || '').trim();
+      const projectName = String(r.project_name || r.项目名称 || r.项目全称 || '').trim();
+      const remark = String(r.remark || r.项目备注 || r.备注 || '').trim();
+      const pipelinePrefix = String(r.pipeline_prefix || r.管线号前缀 || r.管线前缀 || '').trim();
+      const weldPrefix = String(r.weld_prefix || r.焊口号前缀 || r.焊口前缀 || '').trim();
+
+      if (!constructionNo || !projectName) {
+        skipped++;
+        skippedDetails.push(`第 ${lineNo} 行: 施工号或项目名称缺失，已跳过`);
+        return;
+      }
+
+      if (seenConstructionNos.has(constructionNo)) {
+        skipped++;
+        skippedDetails.push(`第 ${lineNo} 行: 文件中施工号重复 [${constructionNo}]，已跳过`);
+        return;
+      }
+
+      const existing = findProjectStmt.get(constructionNo);
+      if (existing) {
+        skipped++;
+        skippedDetails.push(`第 ${lineNo} 行: 施工号已在系统库中存在 [${constructionNo}]，已跳过`);
+        return;
+      }
+
+      seenConstructionNos.add(constructionNo);
+      const uuid = crypto.randomUUID();
+      insertProjectStmt.run(
+        uuid,
+        constructionNo,
+        projectName,
+        remark || null,
+        pipelinePrefix || null,
+        weldPrefix || null
+      );
+      inserted++;
+    });
+
+    db.exec('COMMIT');
+    logger.info({ msg: 'db.import_projects_completed', total: rows.length, inserted, skipped });
+    return { total: rows.length, inserted, skipped, skippedDetails };
+  } catch (e) {
+    db.exec('ROLLBACK');
+    logger.error({ msg: 'db.import_projects_failed', error: e.message });
+    throw e;
+  }
+}
+
 // ─── 导出 ────────────────────────────────────────────────
 module.exports = {
   db,
@@ -837,6 +906,7 @@ module.exports = {
   createProject,
   updateProject,
   deleteProject,
+  importProjects,
 
   // Pipelines
   listPipelines,

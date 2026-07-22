@@ -61,6 +61,12 @@ async function getHandler(request) {
         maxHeight: parseInt(compression.compress_max_height, 10),
         quality: parseFloat(compression.compress_quality),
       },
+      excelCompression: {
+        enabled: compression.excel_compress_enabled === '1',
+        maxWidth: parseInt(compression.excel_compress_max_width, 10),
+        maxHeight: parseInt(compression.excel_compress_max_height, 10),
+        quality: parseFloat(compression.excel_compress_quality),
+      },
     },
     serverIPs: ips,
     port: parseInt(port, 10),
@@ -77,7 +83,7 @@ async function postHandler(request) {
     return Response.json({ success: false, error: '请求体必须是 JSON' }, { status: 400 });
   }
 
-  const { compression, server_public_url } = body;
+  const { compression, excelCompression, server_public_url } = body;
   if (server_public_url !== undefined) {
     db.setSetting('server_public_url', server_public_url.trim());
   }
@@ -94,6 +100,21 @@ async function postHandler(request) {
     }
     if (compression.quality !== undefined) {
       db.setSetting('compress_quality', String(compression.quality));
+    }
+  }
+
+  if (excelCompression) {
+    if (excelCompression.enabled !== undefined) {
+      db.setSetting('excel_compress_enabled', excelCompression.enabled ? '1' : '0');
+    }
+    if (excelCompression.maxWidth !== undefined) {
+      db.setSetting('excel_compress_max_width', String(excelCompression.maxWidth));
+    }
+    if (excelCompression.maxHeight !== undefined) {
+      db.setSetting('excel_compress_max_height', String(excelCompression.maxHeight));
+    }
+    if (excelCompression.quality !== undefined) {
+      db.setSetting('excel_compress_quality', String(excelCompression.quality));
     }
   }
 

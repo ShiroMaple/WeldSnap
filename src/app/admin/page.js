@@ -88,7 +88,7 @@ export default function AdminPage() {
   const [users, setUsers] = useState([]);
   const [settings, setSettings] = useState(null);
 
-  // ─── 照片压缩参数状态 ───────────────────────────────────
+  // ─── 照片压缩参数状态 (移动端上传) ─────────────────────────
   const [compressEnabled, setCompressEnabled] = useState(true);
   const [compressMaxWidth, setCompressMaxWidth] = useState(1920);
   const [compressMaxHeight, setCompressMaxHeight] = useState(1080);
@@ -96,11 +96,33 @@ export default function AdminPage() {
   const [savingCompression, setSavingCompression] = useState(false);
   const [serverPublicUrl, setServerPublicUrl] = useState('');
 
+  // ─── Excel 导出照片瘦身参数状态 ──────────────────────────
+  const [excelCompressEnabled, setExcelCompressEnabled] = useState(false);
+  const [excelCompressMaxWidth, setExcelCompressMaxWidth] = useState(800);
+  const [excelCompressMaxHeight, setExcelCompressMaxHeight] = useState(600);
+  const [excelCompressQuality, setExcelCompressQuality] = useState(0.8);
+
+  // Excel 导出进度条弹窗状态
+  const [exportProgress, setExportProgress] = useState({
+    open: false,
+    percent: 0,
+    currentRecord: 0,
+    totalRecords: 0,
+    processedPhotos: 0,
+    totalPhotos: 0,
+    statusText: '正在准备导出任务...',
+  });
+
   // ─── 弹窗 Modals 状态 ───────────────────────────────────
-  // 1. Excel 导入弹窗
+  // 1. Excel 焊口导入弹窗
   const [showImportModal, setShowImportModal] = useState(false);
   const [importStatus, setImportStatus] = useState('');
   const [importResult, setImportResult] = useState(null);
+
+  // 1.5 Excel 施工项目导入弹窗
+  const [showImportProjectModal, setShowImportProjectModal] = useState(false);
+  const [importProjectStatus, setImportProjectStatus] = useState('');
+  const [importProjectResult, setImportProjectResult] = useState(null);
 
   // 2. 单个管线二维码查看弹窗
   const [showQRModal, setShowQRModal] = useState(false);
@@ -217,6 +239,12 @@ export default function AdminPage() {
             setCompressMaxHeight(data.config.compression.maxHeight);
             setCompressQuality(data.config.compression.quality);
           }
+          if (data.config.excelCompression) {
+            setExcelCompressEnabled(data.config.excelCompression.enabled);
+            setExcelCompressMaxWidth(data.config.excelCompression.maxWidth);
+            setExcelCompressMaxHeight(data.config.excelCompression.maxHeight);
+            setExcelCompressQuality(data.config.excelCompression.quality);
+          }
           setServerPublicUrl(data.config.server_public_url || '');
         }
       }
@@ -236,6 +264,12 @@ export default function AdminPage() {
             maxWidth: compressMaxWidth,
             maxHeight: compressMaxHeight,
             quality: compressQuality,
+          },
+          excelCompression: {
+            enabled: excelCompressEnabled,
+            maxWidth: excelCompressMaxWidth,
+            maxHeight: excelCompressMaxHeight,
+            quality: excelCompressQuality,
           },
         }),
       });
@@ -494,10 +528,56 @@ export default function AdminPage() {
     e.target.value = '';
   };
 
-  // ─── 包含照片与模板的定制化 Excel 导出 ─────────────────
+  // ─── 批量导入施工项目逻辑 ──────────────────────────────
+  const handleImportProjectsFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setImportProjectStatus('正在解析项目 Excel 文件...');
+    setImportProjectResult(null);
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const resp = await fetch('/api/admin/projects/import', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await resp.json();
+      setImportProjectStatus('');
+
+      if (resp.ok && data.success) {
+        setImportProjectResult(data);
+        fetchProjects();
+      } else {
+        setImportProjectResult({
+          success: false,
+          error: data.error || '项目导入失败，请检查文件格式。',
+        });
+      }
+    } catch {
+      setImportProjectStatus('');
+      setImportProjectResult({ success: false, error: '网络中断，文件上传失败。' });
+    }
+    e.target.value = '';
+  };
+
+  // ─── 包含照片与模板的定制化 Excel 导出 (流式进度条版) ───────────
   const handleCustomExcelExport = async () => {
     if (!selectedProjectUuid || exportingExcel) return;
     setExportingExcel(true);
+    setExportProgress({
+      open: true,
+      percent: 0,
+      currentRecord: 0,
+      totalRecords: 0,
+      processedPhotos: 0,
+      totalPhotos: 0,
+      statusText: '正在发起云端导出任务...',
+    });
+
     try {
       const resp = await fetch(`/api/admin/projects/${selectedProjectUuid}/export-excel`, {
         method: 'POST',
@@ -508,38 +588,82 @@ export default function AdminPage() {
       if (!resp.ok) {
         const errJson = await resp.json().catch(() => ({}));
         alert(errJson.error || '导出数据失败');
+        setExportProgress((p) => ({ ...p, open: false }));
+        setExportingExcel(false);
         return;
       }
 
-      const blob = await resp.blob();
-      const contentDisposition = resp.headers.get('Content-Disposition') || '';
-      let fileName = '';
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let partialLine = '';
 
-      const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
-      if (utf8Match && utf8Match[1]) {
-        fileName = decodeURIComponent(utf8Match[1]);
-      } else {
-        const normalMatch = contentDisposition.match(/filename="([^"]+)"/i);
-        if (normalMatch && normalMatch[1]) {
-          fileName = decodeURIComponent(normalMatch[1]);
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = (partialLine + chunk).split('\n');
+        partialLine = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const data = JSON.parse(line.trim());
+            if (data.type === 'start') {
+              setExportProgress((p) => ({
+                ...p,
+                totalRecords: data.totalRecords || 0,
+                totalPhotos: data.totalPhotos || 0,
+                statusText: `定位到 ${data.totalRecords} 条焊口记录 (需装配 ${data.totalPhotos} 张照片)...`,
+              }));
+            } else if (data.type === 'progress') {
+              setExportProgress((p) => ({
+                ...p,
+                percent: data.percent || p.percent,
+                currentRecord: data.currentRecord || p.currentRecord,
+                totalRecords: data.totalRecords || p.totalRecords,
+                processedPhotos: data.processedPhotos || p.processedPhotos,
+                totalPhotos: data.totalPhotos || p.totalPhotos,
+                statusText: data.statusText || p.statusText,
+              }));
+            } else if (data.type === 'done') {
+              setExportProgress((p) => ({
+                ...p,
+                percent: 100,
+                statusText: 'Excel 表格封装完成，正在唤起浏览器下载...',
+              }));
+
+              const byteCharacters = atob(data.base64);
+              const byteNumbers = new Array(byteCharacters.length);
+              for (let i = 0; i < byteCharacters.length; i++) {
+                byteNumbers[i] = byteCharacters.charCodeAt(i);
+              }
+              const byteArray = new Uint8Array(byteNumbers);
+              const blob = new Blob([byteArray], {
+                type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+              });
+
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = data.fileName || '管道焊接过程质量管理基本信息.xlsx';
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              URL.revokeObjectURL(url);
+
+              setTimeout(() => {
+                setExportProgress((p) => ({ ...p, open: false }));
+              }, 1200);
+            }
+          } catch (parseErr) {
+            console.error('Parse stream error', parseErr);
+          }
         }
       }
-
-      if (!fileName) {
-        const safeProjectName = selectedProject?.project_name || '项目';
-        fileName = `${safeProjectName}_管道焊接过程质量管理基本信息.xlsx`;
-      }
-
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
     } catch (err) {
-      alert('网络请求失败，无法导出数据: ' + err.message);
+      alert('导出中断，网络连接异常');
+      setExportProgress((p) => ({ ...p, open: false }));
     } finally {
       setExportingExcel(false);
     }
@@ -695,12 +819,20 @@ export default function AdminPage() {
                       从项目开始管理，您可以在此编辑所有的工程项目和施工号，并设定管线/焊口号的自增生成前缀。
                     </p>
                   </div>
-                  <button
-                    onClick={() => setShowAddProjectModal(true)}
-                    className="h-10 px-6 bg-[#0f62fe] hover:bg-[#0353e9] text-white text-[13px] cursor-pointer rounded-none border-none outline-none font-medium flex items-center gap-1"
-                  >
-                    <span>+</span> 添加项目
-                  </button>
+                  <div className="flex gap-2 items-center">
+                    <button
+                      onClick={() => setShowImportProjectModal(true)}
+                      className="h-10 px-5 border border-[#0f62fe] bg-white hover:bg-[#edf5ff] text-[#0f62fe] text-[13px] cursor-pointer rounded-none outline-none font-medium flex items-center gap-1.5"
+                    >
+                      <span>📥</span> 导入项目
+                    </button>
+                    <button
+                      onClick={() => setShowAddProjectModal(true)}
+                      className="h-10 px-6 bg-[#0f62fe] hover:bg-[#0353e9] text-white text-[13px] cursor-pointer rounded-none border-none outline-none font-medium flex items-center gap-1"
+                    >
+                      <span>+</span> 添加项目
+                    </button>
+                  </div>
                 </div>
 
                 {/* 搜索与过滤工具栏 */}
@@ -1263,6 +1395,74 @@ export default function AdminPage() {
                     )}
                   </div>
 
+                  <hr className="border-t border-[#e0e0e0] my-2" />
+
+                  {/* Excel 导出照片瘦身配置 */}
+                  <div className="space-y-4">
+                    <div>
+                      <h4 className="text-[14px] font-semibold text-[#161616]">📊 Excel 导出照片瘦身设置 (服务端缩略图)</h4>
+                      <p className="text-[12px] text-[#8d8d8d] mt-0.5">
+                        控制导出的 Excel 表格中嵌入的照片尺寸。默认保持原图不压缩，若导出大项目极慢或产生巨型 Excel 导致崩溃，可开启瘦身。
+                      </p>
+                    </div>
+
+                    {/* 启停开关 */}
+                    <div className="flex items-center gap-3">
+                      <label className="text-[13px] text-[#161616] font-medium w-24">Excel 照片瘦身</label>
+                      <button
+                        type="button"
+                        onClick={() => setExcelCompressEnabled(!excelCompressEnabled)}
+                        className={`relative w-12 h-6 cursor-pointer transition-colors duration-200 border-none p-0 shrink-0 rounded-none ${excelCompressEnabled ? 'bg-[#0f62fe]' : 'bg-[#8d8d8d]'
+                          }`}
+                      >
+                        <span
+                          className={`absolute top-[2px] left-0 w-5 h-5 bg-white transition-transform duration-200 ${excelCompressEnabled ? 'translate-x-[26px]' : 'translate-x-[2px]'
+                            }`}
+                        />
+                      </button>
+                      <span className="text-[12px] text-[#525252]">
+                        {excelCompressEnabled ? '开启：导出时照片自动转换为 单元格缩略图' : '关闭（默认）：导出保持原始照片格式与清晰度'}
+                      </span>
+                    </div>
+
+                    {/* 分辨率上限 */}
+                    <div className="flex items-center gap-3">
+                      <label className="text-[13px] text-[#161616] font-medium w-24">缩略图尺寸</label>
+                      <select
+                        value={`${excelCompressMaxWidth}x${excelCompressMaxHeight}`}
+                        onChange={(e) => {
+                          const [w, h] = e.target.value.split('x').map(Number);
+                          setExcelCompressMaxWidth(w);
+                          setExcelCompressMaxHeight(h);
+                        }}
+                        disabled={!excelCompressEnabled}
+                        className="h-9 px-3 bg-white border border-[#c6c6c6] text-[13px] outline-none focus:border-[#0f62fe] rounded-none cursor-pointer disabled:opacity-40"
+                      >
+                        <option value="400x300">400 × 300  (标准缩略图)</option>
+                        <option value="600x450">600 × 450  (清晰缩略图)</option>
+                        <option value="800x600">800 × 600  (高清缩略图 - 推荐)</option>
+                      </select>
+                    </div>
+
+                    {/* JPEG 质量 */}
+                    <div className="flex items-center gap-3">
+                      <label className="text-[13px] text-[#161616] font-medium w-24">导出图片质量</label>
+                      <input
+                        type="range"
+                        min="0.4"
+                        max="1"
+                        step="0.05"
+                        value={excelCompressQuality}
+                        onChange={(e) => setExcelCompressQuality(parseFloat(e.target.value))}
+                        disabled={!excelCompressEnabled}
+                        className="w-48 accent-[#0f62fe] disabled:opacity-40"
+                      />
+                      <span className="text-[14px] font-medium text-[#161616] w-12">
+                        {Math.round(excelCompressQuality * 100)}%
+                      </span>
+                    </div>
+                  </div>
+
                   {/* 保存按钮 */}
                   <div className="pt-2">
                     <button
@@ -1760,6 +1960,147 @@ export default function AdminPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* ─── MODAL: 批量导入施工项目弹窗 ─────────────────── */}
+      {showImportProjectModal && (
+        <div className="fixed inset-0 bg-black/40 z-[99999] flex items-center justify-center p-4">
+          <div className="w-full max-w-[540px] bg-white border border-[#e0e0e0] p-6 rounded-none select-none">
+            <div className="flex items-center justify-between border-b border-[#e0e0e0] pb-3 mb-4">
+              <h3 className="text-[18px] font-light text-[#161616]">📥 批量导入施工项目</h3>
+              <a
+                href="/api/admin/projects/import-template"
+                download
+                className="text-[12px] text-[#0f62fe] hover:underline flex items-center gap-1 font-medium"
+              >
+                <span>📄 下载标准导入模板 (.xlsx)</span>
+              </a>
+            </div>
+
+            <div className="space-y-4">
+              <div className="bg-[#f4f4f4] border border-[#e0e0e0] p-3.5 text-[12px] text-[#525252] leading-relaxed">
+                <p className="font-semibold text-[#161616] mb-1">字段及必填说明：</p>
+                <ul className="list-disc pl-4 space-y-0.5 text-[#525252]">
+                  <li><strong className="text-[#da1e28]">施工号</strong>（必填，全局唯一；重复施工号的项目自动跳过并提示）</li>
+                  <li><strong className="text-[#da1e28]">项目名称</strong>（必填，工程全称）</li>
+                  <li><strong>项目备注</strong>（选填，补充说明）</li>
+                  <li><strong>管线号前缀</strong>（选填，如 PL）</li>
+                  <li><strong>焊口号前缀</strong>（选填，如 W）</li>
+                </ul>
+              </div>
+
+              {/* 上传 Dropzone */}
+              <div className="relative border-2 border-dashed border-[#c6c6c6] hover:border-[#0f62fe] bg-[#f4f4f4] hover:bg-[#edf5ff] p-6 text-center transition-colors cursor-pointer group">
+                <input
+                  type="file"
+                  accept=".xlsx, .xls"
+                  onChange={handleImportProjectsFile}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                />
+                <div className="space-y-1">
+                  <span className="text-[28px] block">📊</span>
+                  <p className="text-[13px] font-medium text-[#161616] group-hover:text-[#0f62fe]">
+                    点击或拖拽上传项目 Excel 文件 (.xlsx)
+                  </p>
+                  <p className="text-[11px] text-[#8d8d8d]">支持按标准模板匹配【施工号、项目名称、项目备注、管线号前缀、焊口号前缀】</p>
+                </div>
+              </div>
+
+              {/* 处理状态 */}
+              {importProjectStatus && (
+                <div className="p-3 bg-[#e8f0fe] border border-[#0f62fe] text-[#0f62fe] text-[12px] font-medium flex items-center gap-2">
+                  <span className="animate-spin">⏳</span>
+                  <span>{importProjectStatus}</span>
+                </div>
+              )}
+
+              {/* 导入结果展示 */}
+              {importProjectResult && (
+                <div className="space-y-3 pt-1">
+                  {importProjectResult.success ? (
+                    <div className="bg-[#defbe6] border border-[#24a148] p-3.5 text-[12px] text-[#0e6027]">
+                      <div className="flex items-center justify-between font-semibold mb-1 text-[13px]">
+                        <span>✅ 导入完成！解析 {importProjectResult.total} 行项目数据</span>
+                        <span className="bg-[#24a148] text-white px-2.5 py-0.5 text-[11px] rounded-none">
+                          成功新建 {importProjectResult.inserted} 个项目
+                        </span>
+                      </div>
+                      {importProjectResult.skipped > 0 && (
+                        <div className="mt-3 pt-2.5 border-t border-[#a7f0ba]">
+                          <p className="font-semibold text-[#8a3800] mb-1.5 flex items-center justify-between">
+                            <span>⚠️ 跳过重复/格式缺失条目 ({importProjectResult.skipped} 行)：</span>
+                          </p>
+                          <div className="max-h-36 overflow-y-auto bg-white border border-[#a7f0ba] p-2.5 space-y-1 text-[11px] text-[#da1e28] font-mono leading-relaxed">
+                            {importProjectResult.skippedDetails.map((detail, idx) => (
+                              <div key={idx} className="flex items-start gap-1">
+                                <span>•</span>
+                                <span>{detail}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="bg-[#fff0f1] border border-[#da1e28] p-3 text-[12px] text-[#da1e28] font-medium">
+                      ❌ 导入失败：{importProjectResult.error}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-3 pt-4 border-t border-[#e0e0e0] mt-6">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowImportProjectModal(false);
+                  setImportProjectResult(null);
+                  setImportProjectStatus('');
+                }}
+                className="h-9 px-5 bg-[#0f62fe] hover:bg-[#0353e9] text-white text-[12px] cursor-pointer rounded-none border-none outline-none font-medium"
+              >
+                关闭
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ─── MODAL: Customized Excel Export Progress Modal ─── */}
+      {exportProgress.open && (
+        <div className="fixed inset-0 bg-black/50 z-[999999] flex items-center justify-center p-4">
+          <div className="w-full max-w-[500px] bg-white border border-[#e0e0e0] p-6 shadow-2xl rounded-none select-none">
+            <div className="flex items-center justify-between border-b border-[#e0e0e0] pb-3 mb-4">
+              <div className="flex items-center space-x-2">
+                <span className="text-[18px]">📊</span>
+                <h3 className="text-[16px] font-bold text-[#161616]">Excel 质量表生成导出中</h3>
+              </div>
+              <span className="text-[14px] font-bold text-[#0f62fe]">{exportProgress.percent}%</span>
+            </div>
+
+            {/* IBM Carbon 风格进度条 */}
+            <div className="w-full bg-[#e0e0e0] h-2.5 mb-3 overflow-hidden relative">
+              <div
+                className="bg-[#0f62fe] h-full transition-all duration-300 ease-out"
+                style={{ width: `${exportProgress.percent}%` }}
+              />
+            </div>
+
+            <div className="space-y-1.5 text-[12px] text-[#525252] mb-4">
+              <p className="font-medium text-[#161616] truncate">{exportProgress.statusText}</p>
+              <div className="flex items-center justify-between text-[11px] text-[#8d8d8d] pt-1">
+                <span>焊口数据处理: {exportProgress.currentRecord} / {exportProgress.totalRecords} 条</span>
+                <span>OSS 照片合并: {exportProgress.processedPhotos} / {exportProgress.totalPhotos} 张</span>
+              </div>
+            </div>
+
+            <div className="bg-[#f4f4f4] border border-[#e0e0e0] p-3 text-[11px] text-[#8d8d8d] flex items-start space-x-2">
+              <span className="text-[13px]">💡</span>
+              <span>
+                系统正通过云端多并发通道组装包含组对/打底/盖面三工序照片的 27 列格式化 Excel，完成后将自动唤起文件下载。
+              </span>
+            </div>
           </div>
         </div>
       )}

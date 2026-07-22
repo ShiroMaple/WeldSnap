@@ -13,6 +13,7 @@ const nextConfig = {
     'bcryptjs',
     'xlsx',
     'exceljs',
+    'sharp',
     'qrcode',
     'sonic-boom',
   ],

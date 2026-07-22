@@ -64,6 +64,15 @@ function UploadContent() {
   const [weldSearchTerm, setWeldSearchTerm] = useState('');
   const [addingWeld, setAddingWeld] = useState(false);
 
+  // 键盘停止键入 1 秒后自动触发焊口搜索
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setWeldSearchTerm(newWeldName.trim());
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [newWeldName]);
+
   // 选中焊口的照片上传状态
   const [uploadedPhotos, setUploadedPhotos] = useState({ zudui: null, dadi: null, gaimian: null });
   const [statusMsg, setStatusMsg] = useState({ zudui: '未上传', dadi: '未上传', gaimian: '未上传' });
@@ -567,12 +576,12 @@ function UploadContent() {
           )}
           <div className="min-w-0 flex-1">
             <h1 className="text-[15px] font-semibold text-[#161616] truncate leading-snug">
-              {currentLevel === 0 && '照片录入'}
+              {currentLevel === 0 && '选择项目'}
               {currentLevel === 1 && '选择管线'}
               {currentLevel === 2 && '选择焊口'}
               {currentLevel === 3 && '工序照片上传'}
             </h1>
-            <span className="text-[10px] text-[#525252] block truncate">
+            <span className="text-[14px] text-[#525252] block truncate">
               {currentUser.display_name || currentUser.username}
             </span>
           </div>
@@ -610,7 +619,7 @@ function UploadContent() {
 
           <button
             onClick={handleLogout}
-            className="text-[#da1e28] text-[12px] hover:underline bg-transparent border-none cursor-pointer outline-none whitespace-nowrap flex-shrink-0"
+            className="text-[#da1e28] text-[14px] hover:underline bg-transparent border-none cursor-pointer outline-none whitespace-nowrap flex-shrink-0"
           >
             退出
           </button>
@@ -619,7 +628,7 @@ function UploadContent() {
 
       {/* 面包屑导航指示器 (与当前层级 currentLevel 严格联动) */}
       {currentLevel > 0 && (
-        <div className="bg-white border border-[#e0e0e0] p-2.5 mb-4 text-[25px] text-[#525252] flex items-center overflow-x-auto whitespace-nowrap">
+        <div className="bg-white border border-[#e0e0e0] p-2.5 mb-4 text-[20px] text-[#525252] flex items-center overflow-x-auto whitespace-nowrap">
           <span
             className={`cursor-pointer hover:underline ${currentLevel === 0 ? 'font-bold text-[#161616]' : 'text-[#0f62fe]'}`}
             onClick={() => navigateToLevel(0)}
@@ -708,7 +717,7 @@ function UploadContent() {
             <div className="space-y-3">
               <div className="flex items-center justify-between border-b border-[#e0e0e0] pb-2">
                 <h3 className="text-[14px] font-semibold text-[#161616]">📁 施工项目列表</h3>
-                <span className="text-[11px] text-[#525252]">点击选择管线</span>
+                <span className="text-[11px] text-[#525252]">点击选择</span>
               </div>
 
               {loadingProjects ? (
@@ -804,7 +813,7 @@ function UploadContent() {
               <div>
                 <span className="text-[12px] text-[#0f62fe] block font-medium">当前定位管线号</span>
                 <span className="text-[18px] font-bold text-[#161616]">{selectedPipeline}</span>
-                <span className="text-[12px] text-[#525252] block mt-0.5">
+                <span className="text-[14px] text-[#525252] block mt-0.5">
                   {selectedProject?.name || selectedProject?.project_name} ({selectedProject?.constructionNo || selectedProject?.construction_no})
                 </span>
               </div>
@@ -854,7 +863,7 @@ function UploadContent() {
                   onClick={() => setWeldSearchTerm(newWeldName.trim())}
                   className="h-12 px-3 bg-white border border-[#0f62fe] hover:bg-[#edf5ff] active:bg-[#d0e1fd] text-[#0f62fe] text-[13px] font-semibold cursor-pointer rounded-none outline-none whitespace-nowrap flex items-center justify-center shrink-0"
                 >
-                  🔍 搜索焊口
+                  搜索
                 </button>
               </div>
             </div>
