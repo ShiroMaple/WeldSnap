@@ -59,8 +59,9 @@ function UploadContent() {
   const [searchResults, setSearchResults] = useState([]);
   const [showSearchResults, setShowSearchResults] = useState(false);
 
-  // 现场新增焊口状态
+  // 现场新增/搜索焊口状态
   const [newWeldName, setNewWeldName] = useState('');
+  const [weldSearchTerm, setWeldSearchTerm] = useState('');
   const [addingWeld, setAddingWeld] = useState(false);
 
   // 选中焊口的照片上传状态
@@ -227,6 +228,8 @@ function UploadContent() {
     setPipelineQuery('');
     setWeldsList([]);
     setSelectedWeld('');
+    setNewWeldName('');
+    setWeldSearchTerm('');
     setUploadedPhotos({ zudui: null, dadi: null, gaimian: null });
     setStatusMsg({ zudui: '未上传', dadi: '未上传', gaimian: '未上传' });
 
@@ -379,6 +382,15 @@ function UploadContent() {
       return a.weld_no.localeCompare(b.weld_no, undefined, { numeric: true });
     });
   }, [weldsList]);
+
+  // 根据当前模糊搜索条件过滤焊口列表
+  const filteredWeldsList = useMemo(() => {
+    if (!weldSearchTerm) return sortedWeldsList;
+    const term = weldSearchTerm.trim().toLowerCase();
+    return sortedWeldsList.filter((w) =>
+      (w.weld_no || '').toLowerCase().includes(term)
+    );
+  }, [sortedWeldsList, weldSearchTerm]);
 
   // 按焊口名称自然顺序排序（用于上一个/下一个焊口顺序切换）
   const nameSortedWelds = useMemo(() => {
@@ -548,7 +560,7 @@ function UploadContent() {
                 else if (currentLevel === 2) navigateToLevel(1);
                 else navigateToLevel(0);
               }}
-              className="h-8 px-2.5 bg-[#393939] hover:bg-[#4c4c4c] text-white text-[12px] font-medium cursor-pointer rounded-none border-none outline-none flex items-center flex-shrink-0"
+              className="h-10 px-5 bg-[#393939] hover:bg-[#4c4c4c] text-white text-[12px] font-medium cursor-pointer rounded-none border-none outline-none flex items-center flex-shrink-0"
             >
               ‹ 返回
             </button>
@@ -574,7 +586,7 @@ function UploadContent() {
               value={pipelineQuery}
               onChange={handleSearchInputChange}
               placeholder="🔍 搜索管线号..."
-              className="w-full h-8 px-2 bg-white border border-[#c6c6c6] text-[#161616] text-[11px] outline-none focus:border-[#0f62fe] rounded-none placeholder-[#8d8d8d]"
+              className="w-full h-8 px-2 bg-white border border-[#c6c6c6] text-[#161616] text-[14px] outline-none focus:border-[#0f62fe] rounded-none placeholder-[#8d8d8d]"
             />
             {showSearchResults && (
               <div className="absolute top-[34px] right-0 w-[220px] border border-[#e0e0e0] bg-white max-h-[220px] overflow-y-auto z-[9999] shadow-lg">
@@ -605,27 +617,41 @@ function UploadContent() {
         </div>
       </header>
 
-      {/* 面包屑导航指示器 */}
+      {/* 面包屑导航指示器 (与当前层级 currentLevel 严格联动) */}
       {currentLevel > 0 && (
-        <div className="bg-white border border-[#e0e0e0] p-2.5 mb-4 text-[12px] text-[#525252] flex items-center overflow-x-auto whitespace-nowrap">
-          <span className="cursor-pointer hover:underline text-[#0f62fe]" onClick={() => navigateToLevel(0)}>首页</span>
-          {selectedProject && (
+        <div className="bg-white border border-[#e0e0e0] p-2.5 mb-4 text-[25px] text-[#525252] flex items-center overflow-x-auto whitespace-nowrap">
+          <span
+            className={`cursor-pointer hover:underline ${currentLevel === 0 ? 'font-bold text-[#161616]' : 'text-[#0f62fe]'}`}
+            onClick={() => navigateToLevel(0)}
+          >
+            首页
+          </span>
+
+          {currentLevel >= 1 && selectedProject && (
             <>
               <span className="mx-1 text-[#8d8d8d]">/</span>
-              <span className="cursor-pointer hover:underline text-[#0f62fe]" onClick={() => navigateToLevel(1)}>
-                {selectedProject.construction_no || selectedProject.constructionNo}
+              <span
+                className={`cursor-pointer hover:underline ${currentLevel === 1 ? 'font-bold text-[#161616]' : 'text-[#0f62fe]'}`}
+                onClick={() => navigateToLevel(1)}
+              >
+                {selectedProject.construction_no || selectedProject.constructionNo || selectedProject.project_name}
               </span>
             </>
           )}
-          {selectedPipeline && (
+
+          {currentLevel >= 2 && selectedPipeline && (
             <>
               <span className="mx-1 text-[#8d8d8d]">/</span>
-              <span className="cursor-pointer hover:underline text-[#0f62fe]" onClick={() => navigateToLevel(2)}>
+              <span
+                className={`cursor-pointer hover:underline ${currentLevel === 2 ? 'font-bold text-[#161616]' : 'text-[#0f62fe]'}`}
+                onClick={() => navigateToLevel(2)}
+              >
                 {selectedPipeline}
               </span>
             </>
           )}
-          {selectedWeld && (
+
+          {currentLevel === 3 && selectedWeld && (
             <>
               <span className="mx-1 text-[#8d8d8d]">/</span>
               <span className="font-bold text-[#161616]">{selectedWeld}</span>
@@ -776,7 +802,7 @@ function UploadContent() {
             {/* 当前定位管线 Banner */}
             <div className="bg-[#edf5ff] border border-[#0f62fe] p-4 flex items-center justify-between">
               <div>
-                <span className="text-[11px] text-[#0f62fe] block font-medium">当前定位管线号</span>
+                <span className="text-[12px] text-[#0f62fe] block font-medium">当前定位管线号</span>
                 <span className="text-[18px] font-bold text-[#161616]">{selectedPipeline}</span>
                 <span className="text-[12px] text-[#525252] block mt-0.5">
                   {selectedProject?.name || selectedProject?.project_name} ({selectedProject?.constructionNo || selectedProject?.construction_no})
@@ -790,45 +816,81 @@ function UploadContent() {
               </button>
             </div>
 
-            {/* 现场快捷新增焊口控件 (与 PC 端一致：固定提供输入框与新增动作) */}
+            {/* 现场快捷新增/搜索焊口控件 (复用输入框) */}
             <div className="bg-white border border-[#e0e0e0] p-4 rounded-none space-y-2">
-              <span className="text-[12px] text-[#525252] block font-medium">💡 未在图纸清单中？在现场快速添加焊口：</span>
-              <div className="flex gap-2">
+              <span className="text-[12px] text-[#525252] block font-medium">💡 搜索或快速新增焊口：</span>
+              <div className="flex gap-1.5">
                 <input
                   type="text"
                   value={newWeldName}
-                  onChange={(e) => setNewWeldName(e.target.value)}
+                  onChange={(e) => {
+                    setNewWeldName(e.target.value);
+                    if (!e.target.value) setWeldSearchTerm('');
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      setWeldSearchTerm(newWeldName.trim());
+                    }
+                  }}
                   placeholder={
                     (selectedProject?.weld_prefix || selectedProject?.weldPrefix)
                       ? `输入焊口号 (留空自动按 ${selectedProject.weld_prefix || selectedProject.weldPrefix}-XX 生成)`
-                      : '输入新焊口编号...'
+                      : '输入焊口号...'
                   }
                   disabled={addingWeld}
-                  className="flex-1 h-12 px-3 bg-white border border-[#c6c6c6] text-[#161616] text-[13px] outline-none focus:border-[#0f62fe] rounded-none placeholder-[#8d8d8d]"
+                  className="flex-1 min-w-0 h-12 px-3 bg-white border border-[#c6c6c6] text-[#161616] text-[13px] outline-none focus:border-[#0f62fe] rounded-none placeholder-[#8d8d8d]"
                 />
                 <button
                   type="button"
                   disabled={addingWeld}
                   onClick={handleAddWeldOnsite}
-                  className="h-12 px-5 bg-[#0f62fe] hover:bg-[#0353e9] active:bg-[#002d9c] text-white text-[14px] font-semibold cursor-pointer rounded-none border-none outline-none disabled:bg-[#8d8d8d] whitespace-nowrap flex items-center justify-center"
+                  className="h-12 px-3 bg-[#0f62fe] hover:bg-[#0353e9] active:bg-[#002d9c] text-white text-[13px] font-semibold cursor-pointer rounded-none border-none outline-none disabled:bg-[#8d8d8d] whitespace-nowrap flex items-center justify-center shrink-0"
                 >
                   {addingWeld ? '新增中...' : '+ 新增焊口'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setWeldSearchTerm(newWeldName.trim())}
+                  className="h-12 px-3 bg-white border border-[#0f62fe] hover:bg-[#edf5ff] active:bg-[#d0e1fd] text-[#0f62fe] text-[13px] font-semibold cursor-pointer rounded-none outline-none whitespace-nowrap flex items-center justify-center shrink-0"
+                >
+                  🔍 搜索焊口
                 </button>
               </div>
             </div>
 
-            {/* 焊口卡片列表 (按智能状态排序：不合格 ➔ 待拍摄 ➔ 已拍摄) */}
+            {/* 焊口卡片列表 (按智能状态排序与搜索条件筛选) */}
             <div className="space-y-2">
               <div className="flex items-center justify-between pb-1">
-                <span className="text-[13px] font-semibold text-[#161616]">焊口列表 ({weldsList.length})</span>
+                <span className="text-[13px] font-semibold text-[#161616]">
+                  {weldSearchTerm
+                    ? `匹配焊口 (${filteredWeldsList.length} / ${weldsList.length})`
+                    : `焊口列表 (${weldsList.length})`}
+                </span>
+                {weldSearchTerm && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setWeldSearchTerm('');
+                      setNewWeldName('');
+                    }}
+                    className="text-[12px] text-[#0f62fe] hover:underline bg-transparent border-none cursor-pointer p-0"
+                  >
+                    重置搜索 (显示全部)
+                  </button>
+                )}
               </div>
 
               {weldsList.length === 0 ? (
                 <div className="p-8 text-center text-[#8d8d8d] text-[13px] bg-white border border-[#e0e0e0]">
                   该管线暂无焊口记录，可在上方新增
                 </div>
+              ) : filteredWeldsList.length === 0 ? (
+                <div className="p-8 text-center text-[#8d8d8d] text-[13px] bg-white border border-[#e0e0e0]">
+                  未找到匹配 “{weldSearchTerm}” 的焊口，可在上方点击 “+ 新增焊口”
+                </div>
               ) : (
-                sortedWeldsList.map((w) => {
+                filteredWeldsList.map((w) => {
                   const badge = getWeldBadge(w);
                   return (
                     <div
@@ -866,7 +928,7 @@ function UploadContent() {
         {currentLevel === 3 && selectedWeld && (
           <div className="space-y-4">
             <div className="bg-[#edf5ff] border border-[#0f62fe] p-3 text-[13px]">
-              <span className="text-[11px] text-[#0f62fe] block">正在录入焊口照片</span>
+              <span className="text-[12px] text-[#0f62fe] block">正在录入焊口照片</span>
               <span className="text-[16px] font-bold text-[#161616]">{selectedPipeline} - {selectedWeld}</span>
             </div>
 
