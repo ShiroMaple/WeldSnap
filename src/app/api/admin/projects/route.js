@@ -27,7 +27,7 @@ async function postHandler(request) {
     return Response.json({ success: false, error: '请求体必须是 JSON' }, { status: 400 });
   }
 
-  const { construction_no, project_name, remark, pipeline_prefix, weld_prefix } = body;
+  const { construction_no, project_name, remark, pipeline_prefix, weld_prefix, owner_unit, construction_unit, completion_status } = body;
 
   if (!construction_no || !construction_no.trim()) {
     return Response.json({ success: false, error: '项目施工号不能为空' }, { status: 400 });
@@ -41,7 +41,10 @@ async function postHandler(request) {
     project_name.trim(),
     remark || '',
     pipeline_prefix || '',
-    weld_prefix || ''
+    weld_prefix || '',
+    owner_unit || '',
+    construction_unit || '',
+    completion_status || '进行中'
   );
 
   if (result.success) {

@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
 
 const { withTrace } = require('../../../../middleware/withTrace');
 const db = require('../../../../lib/db');
-const logger = require('../../../../lib/logger');
+const { logger } = require('../../../../lib/logger');
 
 const DEFAULT_SECRET_TOKEN = process.env.SYNC_API_KEY || 'weldsnap-dee-secret-key';
 
@@ -42,13 +42,16 @@ async function handler(request) {
     return Response.json({ success: false, error: '接收到的项目数据为空' }, { status: 400 });
   }
 
-  // 映射与清洗字段
+  // 严格按约定读取字段
   const records = rawList.map((item) => ({
-    construction_no: String(item.construction_no || item.施工号 || item.施工编号 || item.project_code || '').trim(),
-    project_name: String(item.project_name || item.项目名称 || item.工程名称 || '').trim(),
-    remark: String(item.remark || item.项目备注 || item.备注 || '').trim(),
-    pipeline_prefix: String(item.pipeline_prefix || item.管线号前缀 || item.管线前缀 || '').trim(),
-    weld_prefix: String(item.weld_prefix || item.焊口号前缀 || item.焊口前缀 || '').trim(),
+    construction_no: String(item.construction_no || '').trim(),
+    project_name: String(item.project_name || '').trim(),
+    owner_unit: String(item.owner_unit || '').trim(),
+    construction_unit: String(item.construction_unit || '').trim(),
+    completion_status: String(item.completion_status || '').trim() || '进行中',
+    remark: String(item.remark || '').trim(),
+    pipeline_prefix: String(item.pipeline_prefix || '').trim(),
+    weld_prefix: String(item.weld_prefix || '').trim(),
   }));
 
   // 3. 调用数据库批量插入/去重事务

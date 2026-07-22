@@ -11,11 +11,14 @@ const XLSX = require('xlsx');
 
 // 匹配列名的映射规则
 const PROJECT_COLUMNS = {
-  construction_no: ['施工号', '施工编号', '项目施工号', 'construction_no'],
-  project_name: ['项目名称', '项目全称', '工程名称', 'project_name'],
-  remark: ['项目备注', '备注', 'remark'],
-  pipeline_prefix: ['管线号前缀', '管线前缀', '管线前缀号', 'pipeline_prefix'],
-  weld_prefix: ['焊口号前缀', '焊口前缀', '焊口前缀号', 'weld_prefix'],
+  construction_no: ['施工号', 'construction_no'],
+  project_name: ['项目名称', 'project_name'],
+  owner_unit: ['建设单位', 'owner_unit'],
+  construction_unit: ['施工单位', 'construction_unit'],
+  completion_status: ['项目完工状态', 'completion_status', '状态'],
+  remark: ['项目备注', 'remark'],
+  pipeline_prefix: ['管线号前缀', 'pipeline_prefix'],
+  weld_prefix: ['焊口号前缀', 'weld_prefix'],
 };
 
 async function handler(request) {
@@ -73,6 +76,9 @@ async function handler(request) {
   const records = rows.map((r) => ({
     construction_no: colMap.construction_no ? String(r[colMap.construction_no]).trim() : '',
     project_name: colMap.project_name ? String(r[colMap.project_name]).trim() : '',
+    owner_unit: colMap.owner_unit ? String(r[colMap.owner_unit]).trim() : '',
+    construction_unit: colMap.construction_unit ? String(r[colMap.construction_unit]).trim() : '',
+    completion_status: colMap.completion_status ? String(r[colMap.completion_status]).trim() : '进行中',
     remark: colMap.remark ? String(r[colMap.remark]).trim() : '',
     pipeline_prefix: colMap.pipeline_prefix ? String(r[colMap.pipeline_prefix]).trim() : '',
     weld_prefix: colMap.weld_prefix ? String(r[colMap.weld_prefix]).trim() : '',

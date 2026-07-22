@@ -28,7 +28,9 @@ async function putHandler(request, { params }) {
     return Response.json({ success: false, error: '请求体必须是 JSON' }, { status: 400 });
   }
 
-  const { construction_no, project_name, remark, pipeline_prefix, weld_prefix, status } = body;
+  const { construction_no, project_name, remark, pipeline_prefix, weld_prefix, status, completion_status, owner_unit, construction_unit } = body;
+
+  const finalStatus = completion_status || status || '进行中';
 
   if (!construction_no || !construction_no.trim()) {
     return Response.json({ success: false, error: '项目施工号不能为空' }, { status: 400 });
@@ -36,8 +38,8 @@ async function putHandler(request, { params }) {
   if (!project_name || !project_name.trim()) {
     return Response.json({ success: false, error: '项目名称不能为空' }, { status: 400 });
   }
-  if (!['进行中', '已完工'].includes(status)) {
-    return Response.json({ success: false, error: '项目状态不合法' }, { status: 400 });
+  if (!['进行中', '已完工'].includes(finalStatus)) {
+    return Response.json({ success: false, error: '项目完工状态不合法' }, { status: 400 });
   }
 
   const result = db.updateProject(
@@ -47,7 +49,9 @@ async function putHandler(request, { params }) {
     remark,
     pipeline_prefix,
     weld_prefix,
-    status
+    finalStatus,
+    owner_unit || '',
+    construction_unit || ''
   );
 
   if (result.success) {

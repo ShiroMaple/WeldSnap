@@ -49,6 +49,9 @@ export default function AdminPage() {
   const [showAddProjectModal, setShowAddProjectModal] = useState(false);
   const [newConstructionNo, setNewConstructionNo] = useState('');
   const [newProjectName, setNewProjectName] = useState('');
+  const [newOwnerUnit, setNewOwnerUnit] = useState('');
+  const [newConstructionUnit, setNewConstructionUnit] = useState('');
+  const [newCompletionStatus, setNewCompletionStatus] = useState('进行中');
   const [newRemark, setNewRemark] = useState('');
   const [newPipelinePrefix, setNewPipelinePrefix] = useState('');
   const [newWeldPrefix, setNewWeldPrefix] = useState('');
@@ -57,10 +60,12 @@ export default function AdminPage() {
   const [editProjectUuid, setEditProjectUuid] = useState('');
   const [editConstructionNo, setEditConstructionNo] = useState('');
   const [editProjectName, setEditProjectName] = useState('');
+  const [editOwnerUnit, setEditOwnerUnit] = useState('');
+  const [editConstructionUnit, setEditConstructionUnit] = useState('');
+  const [editCompletionStatus, setEditCompletionStatus] = useState('进行中');
   const [editRemark, setEditRemark] = useState('');
   const [editPipelinePrefix, setEditPipelinePrefix] = useState('');
   const [editWeldPrefix, setEditWeldPrefix] = useState('');
-  const [editProjectStatus, setEditProjectStatus] = useState('进行中');
 
   // ─── 项目级详情状态 ─────────────────────────────────────
   const [stats, setStats] = useState({ total: 0, completed: 0, pending: 0 });
@@ -360,6 +365,9 @@ export default function AdminPage() {
         body: JSON.stringify({
           construction_no: newConstructionNo,
           project_name: newProjectName,
+          owner_unit: newOwnerUnit,
+          construction_unit: newConstructionUnit,
+          completion_status: newCompletionStatus,
           remark: newRemark,
           pipeline_prefix: newPipelinePrefix,
           weld_prefix: newWeldPrefix,
@@ -370,6 +378,9 @@ export default function AdminPage() {
         setShowAddProjectModal(false);
         setNewConstructionNo('');
         setNewProjectName('');
+        setNewOwnerUnit('');
+        setNewConstructionUnit('');
+        setNewCompletionStatus('进行中');
         setNewRemark('');
         setNewPipelinePrefix('');
         setNewWeldPrefix('');
@@ -387,10 +398,12 @@ export default function AdminPage() {
     setEditProjectUuid(p.uuid);
     setEditConstructionNo(p.construction_no);
     setEditProjectName(p.project_name);
+    setEditOwnerUnit(p.owner_unit || '');
+    setEditConstructionUnit(p.construction_unit || '');
+    setEditCompletionStatus(p.completion_status || p.status || '进行中');
     setEditRemark(p.remark || '');
     setEditPipelinePrefix(p.pipeline_prefix || '');
     setEditWeldPrefix(p.weld_prefix || '');
-    setEditProjectStatus(p.status || '进行中');
     setShowEditProjectModal(true);
   };
 
@@ -408,10 +421,12 @@ export default function AdminPage() {
         body: JSON.stringify({
           construction_no: editConstructionNo,
           project_name: editProjectName,
+          owner_unit: editOwnerUnit,
+          construction_unit: editConstructionUnit,
+          completion_status: editCompletionStatus,
           remark: editRemark,
           pipeline_prefix: editPipelinePrefix,
           weld_prefix: editWeldPrefix,
-          status: editProjectStatus,
         }),
       });
       const data = await resp.json();
@@ -881,10 +896,12 @@ export default function AdminPage() {
                       <tr className="border-b border-[#c6c6c6] bg-[#f4f4f4] text-[#525252] font-semibold">
                         <th className="py-3 px-4 font-medium">施工号 (全局唯一)</th>
                         <th className="py-3 px-4 font-medium">项目名称</th>
+                        <th className="py-3 px-4 font-medium">建设单位</th>
+                        <th className="py-3 px-4 font-medium">施工单位</th>
                         <th className="py-3 px-4 font-medium">备注</th>
                         <th className="py-3 px-4 font-medium text-center">管线数</th>
                         <th className="py-3 px-4 font-medium text-center">焊口数</th>
-                        <th className="py-3 px-4 font-medium text-center">完工情况</th>
+                        <th className="py-3 px-4 font-medium text-center">完工状态</th>
                         <th className="py-3 px-4 font-medium">质量记录进度</th>
                         <th className="py-3 px-4 font-medium">创建时间</th>
                         <th className="py-3 px-4 font-medium text-right">操作</th>
@@ -893,7 +910,7 @@ export default function AdminPage() {
                     <tbody className="divide-y divide-[#e0e0e0] text-[#161616]">
                       {sortedProjects.length === 0 ? (
                         <tr>
-                          <td colSpan="9" className="py-10 text-center text-[#8d8d8d]">
+                          <td colSpan="11" className="py-10 text-center text-[#8d8d8d]">
                             暂无匹配的项目。请点击右上角“新建项目”开始。
                           </td>
                         </tr>
@@ -906,7 +923,13 @@ export default function AdminPage() {
                             <td className="py-3.5 px-4 font-medium text-[#161616]">
                               {p.project_name}
                             </td>
-                            <td className="py-3.5 px-4 text-[#525252] truncate max-w-[200px]" title={p.remark}>
+                            <td className="py-3.5 px-4 text-[#525252] truncate max-w-[150px]" title={p.owner_unit}>
+                              {p.owner_unit || '-'}
+                            </td>
+                            <td className="py-3.5 px-4 text-[#525252] truncate max-w-[150px]" title={p.construction_unit}>
+                              {p.construction_unit || '-'}
+                            </td>
+                            <td className="py-3.5 px-4 text-[#525252] truncate max-w-[160px]" title={p.remark}>
                               {p.remark || '-'}
                             </td>
                             <td className="py-3.5 px-4 text-center">{p.pipeline_count}</td>
@@ -914,13 +937,13 @@ export default function AdminPage() {
                             <td className="py-3.5 px-4 text-center">
                               <span
                                 className={`inline-block px-2 py-0.5 text-[11px] font-medium
-                                  ${p.status === '已完工'
+                                  ${(p.completion_status || p.status) === '已完工'
                                     ? 'bg-[#24a148]/10 text-[#24a148]'
                                     : 'bg-[#f1c21b]/10 text-[#7d5c00]'
                                   }
                                 `}
                               >
-                                {p.status}
+                                {p.completion_status || p.status || '进行中'}
                               </span>
                             </td>
                             <td className="py-3.5 px-4">
@@ -1500,7 +1523,7 @@ export default function AdminPage() {
               </div>
 
               <div className="flex flex-col">
-                <label className="text-[12px] text-[#525252] mb-1">项目名称</label>
+                <label className="text-[12px] text-[#525252] mb-1">项目名称 (必填)</label>
                 <input
                   type="text"
                   required
@@ -1509,6 +1532,41 @@ export default function AdminPage() {
                   placeholder="项目中文全称"
                   className="h-9 px-3 bg-[#f4f4f4] border-t-0 border-x-0 border-b-2 border-transparent focus:border-[#0f62fe] focus:bg-[#e8e8e8] text-[13px] outline-none rounded-none"
                 />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex flex-col">
+                  <label className="text-[12px] text-[#525252] mb-1">建设单位 (选填)</label>
+                  <input
+                    type="text"
+                    value={newOwnerUnit}
+                    onChange={(e) => setNewOwnerUnit(e.target.value)}
+                    placeholder="如: 中国石化分公司"
+                    className="h-9 px-3 bg-[#f4f4f4] border-t-0 border-x-0 border-b-2 border-transparent focus:border-[#0f62fe] focus:bg-[#e8e8e8] text-[13px] outline-none rounded-none"
+                  />
+                </div>
+                <div className="flex flex-col">
+                  <label className="text-[12px] text-[#525252] mb-1">施工单位 (选填)</label>
+                  <input
+                    type="text"
+                    value={newConstructionUnit}
+                    onChange={(e) => setNewConstructionUnit(e.target.value)}
+                    placeholder="如: 中石化十建公司"
+                    className="h-9 px-3 bg-[#f4f4f4] border-t-0 border-x-0 border-b-2 border-transparent focus:border-[#0f62fe] focus:bg-[#e8e8e8] text-[13px] outline-none rounded-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-col">
+                <label className="text-[12px] text-[#525252] mb-1">项目完工状态 (默认为进行中)</label>
+                <select
+                  value={newCompletionStatus}
+                  onChange={(e) => setNewCompletionStatus(e.target.value)}
+                  className="h-9 px-3 bg-[#f4f4f4] border-t-0 border-x-0 border-b-2 border-transparent focus:border-[#0f62fe] text-[13px] outline-none rounded-none cursor-pointer"
+                >
+                  <option value="进行中">进行中</option>
+                  <option value="已完工">已完工</option>
+                </select>
               </div>
 
               <div className="flex flex-col">
@@ -1594,6 +1652,39 @@ export default function AdminPage() {
                 />
               </div>
 
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex flex-col">
+                  <label className="text-[12px] text-[#525252] mb-1">建设单位 (选填)</label>
+                  <input
+                    type="text"
+                    value={editOwnerUnit}
+                    onChange={(e) => setEditOwnerUnit(e.target.value)}
+                    className="h-9 px-3 bg-[#f4f4f4] border-t-0 border-x-0 border-b-2 border-transparent focus:border-[#0f62fe] focus:bg-[#e8e8e8] text-[13px] outline-none rounded-none"
+                  />
+                </div>
+                <div className="flex flex-col">
+                  <label className="text-[12px] text-[#525252] mb-1">施工单位 (选填)</label>
+                  <input
+                    type="text"
+                    value={editConstructionUnit}
+                    onChange={(e) => setEditConstructionUnit(e.target.value)}
+                    className="h-9 px-3 bg-[#f4f4f4] border-t-0 border-x-0 border-b-2 border-transparent focus:border-[#0f62fe] focus:bg-[#e8e8e8] text-[13px] outline-none rounded-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-col">
+                <label className="text-[12px] text-[#525252] mb-1">项目完工状态</label>
+                <select
+                  value={editCompletionStatus}
+                  onChange={(e) => setEditCompletionStatus(e.target.value)}
+                  className="h-9 px-3 bg-[#f4f4f4] border-t-0 border-x-0 border-b-2 border-transparent focus:border-[#0f62fe] text-[13px] outline-none rounded-none cursor-pointer"
+                >
+                  <option value="进行中">进行中</option>
+                  <option value="已完工">已完工</option>
+                </select>
+              </div>
+
               <div className="flex flex-col">
                 <label className="text-[12px] text-[#525252] mb-1">项目备注</label>
                 <input
@@ -1623,18 +1714,6 @@ export default function AdminPage() {
                     className="h-9 px-3 bg-[#f4f4f4] border-t-0 border-x-0 border-b-2 border-transparent focus:border-[#0f62fe] focus:bg-[#e8e8e8] text-[13px] outline-none rounded-none"
                   />
                 </div>
-              </div>
-
-              <div className="flex flex-col">
-                <label className="text-[12px] text-[#525252] mb-1">项目完工状态</label>
-                <select
-                  value={editProjectStatus}
-                  onChange={(e) => setEditProjectStatus(e.target.value)}
-                  className="h-9 px-3 bg-[#f4f4f4] border-t-0 border-x-0 border-b-2 border-transparent focus:border-[#0f62fe] text-[13px] outline-none rounded-none cursor-pointer"
-                >
-                  <option value="进行中">进行中</option>
-                  <option value="已完工">已完工</option>
-                </select>
               </div>
 
               <div className="flex justify-end gap-3 pt-4 border-t border-[#e0e0e0] mt-6">
@@ -1982,11 +2061,14 @@ export default function AdminPage() {
               <div className="bg-[#f4f4f4] border border-[#e0e0e0] p-3.5 text-[12px] text-[#525252] leading-relaxed">
                 <p className="font-semibold text-[#161616] mb-1">字段及必填说明：</p>
                 <ul className="list-disc pl-4 space-y-0.5 text-[#525252]">
-                  <li><strong className="text-[#da1e28]">施工号</strong>（必填，全局唯一；重复施工号的项目自动跳过并提示）</li>
-                  <li><strong className="text-[#da1e28]">项目名称</strong>（必填，工程全称）</li>
-                  <li><strong>项目备注</strong>（选填，补充说明）</li>
-                  <li><strong>管线号前缀</strong>（选填，如 PL）</li>
-                  <li><strong>焊口号前缀</strong>（选填，如 W）</li>
+                  <li><strong className="text-[#da1e28]">施工号</strong>（必填，键名: construction_no，全局唯一；重复施工号的项目自动跳过并提示）</li>
+                  <li><strong className="text-[#da1e28]">项目名称</strong>（必填，键名: project_name）</li>
+                  <li><strong>建设单位</strong>（选填，键名: owner_unit）</li>
+                  <li><strong>施工单位</strong>（选填，键名: construction_unit）</li>
+                  <li><strong>项目完工状态</strong>（选填，键名: completion_status，未填写默认为进行中）</li>
+                  <li><strong>项目备注</strong>（选填，键名: remark）</li>
+                  <li><strong>管线号前缀</strong>（选填，键名: pipeline_prefix）</li>
+                  <li><strong>焊口号前缀</strong>（选填，键名: weld_prefix）</li>
                 </ul>
               </div>
 

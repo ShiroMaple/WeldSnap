@@ -42,15 +42,18 @@ function getDbInstance() {
         if (!tableExists) {
           db.exec(`
             CREATE TABLE IF NOT EXISTS projects (
-              id              INTEGER PRIMARY KEY AUTOINCREMENT,
-              uuid            TEXT UNIQUE NOT NULL,
-              construction_no TEXT UNIQUE NOT NULL,
-              project_name    TEXT NOT NULL,
-              remark          TEXT,
-              status          TEXT NOT NULL DEFAULT '进行中',
-              pipeline_prefix TEXT,
-              weld_prefix     TEXT,
-              created_at      TEXT DEFAULT (datetime('now','localtime'))
+              id                INTEGER PRIMARY KEY AUTOINCREMENT,
+              uuid              TEXT UNIQUE NOT NULL,
+              construction_no   TEXT UNIQUE NOT NULL,
+              project_name      TEXT NOT NULL,
+              remark            TEXT,
+              owner_unit        TEXT,
+              construction_unit TEXT,
+              completion_status TEXT NOT NULL DEFAULT '进行中',
+              status            TEXT NOT NULL DEFAULT '进行中',
+              pipeline_prefix   TEXT,
+              weld_prefix       TEXT,
+              created_at        TEXT DEFAULT (datetime('now','localtime'))
             );
 
             CREATE TABLE IF NOT EXISTS pipelines (
@@ -108,6 +111,21 @@ function getDbInstance() {
             value           TEXT NOT NULL
           );
         `);
+
+        // ─── 动态增加新列 Migration ──────────────────────────────
+        const projectCols = db.prepare("PRAGMA table_info('projects')").all().map(c => c.name);
+        if (!projectCols.includes('owner_unit')) {
+          db.exec("ALTER TABLE projects ADD COLUMN owner_unit TEXT");
+        }
+        if (!projectCols.includes('construction_unit')) {
+          db.exec("ALTER TABLE projects ADD COLUMN construction_unit TEXT");
+        }
+        if (!projectCols.includes('completion_status')) {
+          db.exec("ALTER TABLE projects ADD COLUMN completion_status TEXT DEFAULT '进行中'");
+          if (projectCols.includes('status')) {
+            db.exec("UPDATE projects SET completion_status = status WHERE status IS NOT NULL AND status != ''");
+          }
+        }
 
         break; // 成功执行，跳出循环
       } catch (err) {
@@ -278,14 +296,26 @@ function getProjectByUuid(uuid) {
   return db.prepare('SELECT * FROM projects WHERE uuid = ?').get(uuid) || null;
 }
 
-function createProject(constructionNo, projectName, remark, pipelinePrefix, weldPrefix) {
+function createProject(constructionNo, projectName, remark, pipelinePrefix, weldPrefix, ownerUnit, constructionUnit, completionStatus) {
   try {
     const uuid = crypto.randomUUID();
+    const statusVal = completionStatus ? completionStatus.trim() : '进行中';
     db.prepare(`
-      INSERT INTO projects (uuid, construction_no, project_name, remark, pipeline_prefix, weld_prefix)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(uuid, constructionNo.trim(), projectName.trim(), remark || '', pipelinePrefix || null, weldPrefix || null);
-    
+      INSERT INTO projects (uuid, construction_no, project_name, remark, pipeline_prefix, weld_prefix, owner_unit, construction_unit, completion_status, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      uuid,
+      constructionNo.trim(),
+      projectName.trim(),
+      remark || '',
+      pipelinePrefix || null,
+      weldPrefix || null,
+      ownerUnit || null,
+      constructionUnit || null,
+      statusVal,
+      statusVal
+    );
+
     logger.info({ msg: 'db.project_created', uuid, constructionNo });
     return { success: true, uuid };
   } catch (e) {
@@ -294,13 +324,25 @@ function createProject(constructionNo, projectName, remark, pipelinePrefix, weld
   }
 }
 
-function updateProject(uuid, constructionNo, projectName, remark, pipelinePrefix, weldPrefix, status) {
+function updateProject(uuid, constructionNo, projectName, remark, pipelinePrefix, weldPrefix, completionStatus, ownerUnit, constructionUnit) {
   try {
+    const statusVal = completionStatus ? completionStatus.trim() : '进行中';
     db.prepare(`
       UPDATE projects 
-      SET construction_no = ?, project_name = ?, remark = ?, pipeline_prefix = ?, weld_prefix = ?, status = ?
+      SET construction_no = ?, project_name = ?, remark = ?, pipeline_prefix = ?, weld_prefix = ?, completion_status = ?, status = ?, owner_unit = ?, construction_unit = ?
       WHERE uuid = ?
-    `).run(constructionNo.trim(), projectName.trim(), remark || '', pipelinePrefix || null, weldPrefix || null, status, uuid);
+    `).run(
+      constructionNo.trim(),
+      projectName.trim(),
+      remark || '',
+      pipelinePrefix || null,
+      weldPrefix || null,
+      statusVal,
+      statusVal,
+      ownerUnit || null,
+      constructionUnit || null,
+      uuid
+    );
     return { success: true };
   } catch (e) {
     return { success: false, error: '更新失败: 施工号可能已被其他项目占用' };
@@ -756,7 +798,10 @@ function getProjectExportRecords(projectUuid, pipelineUuids = []) {
       p.pipeline_no,
       pr.uuid as project_uuid,
       pr.project_name,
-      pr.construction_no
+      pr.construction_no,
+      pr.owner_unit,
+      pr.construction_unit,
+      COALESCE(pr.completion_status, pr.status, '进行中') as completion_status
     FROM weld_records w
     JOIN pipelines p ON w.pipeline_id = p.id
     JOIN projects pr ON p.project_id = pr.id
@@ -833,23 +878,26 @@ function importProjects(rows) {
   try {
     const findProjectStmt = db.prepare('SELECT id FROM projects WHERE construction_no = ?');
     const insertProjectStmt = db.prepare(`
-      INSERT INTO projects (uuid, construction_no, project_name, remark, pipeline_prefix, weld_prefix)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO projects (uuid, construction_no, project_name, remark, pipeline_prefix, weld_prefix, owner_unit, construction_unit, completion_status, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const seenConstructionNos = new Set();
 
     rows.forEach((r, idx) => {
       const lineNo = idx + 2;
-      const constructionNo = String(r.construction_no || r.施工号 || r.项目施工号 || '').trim();
-      const projectName = String(r.project_name || r.项目名称 || r.项目全称 || '').trim();
-      const remark = String(r.remark || r.项目备注 || r.备注 || '').trim();
-      const pipelinePrefix = String(r.pipeline_prefix || r.管线号前缀 || r.管线前缀 || '').trim();
-      const weldPrefix = String(r.weld_prefix || r.焊口号前缀 || r.焊口前缀 || '').trim();
+      const constructionNo = String(r.construction_no || '').trim();
+      const projectName = String(r.project_name || '').trim();
+      const remark = String(r.remark || '').trim();
+      const pipelinePrefix = String(r.pipeline_prefix || '').trim();
+      const weldPrefix = String(r.weld_prefix || '').trim();
+      const ownerUnit = String(r.owner_unit || '').trim();
+      const constructionUnit = String(r.construction_unit || '').trim();
+      const completionStatus = String(r.completion_status || '').trim() || '进行中';
 
       if (!constructionNo || !projectName) {
         skipped++;
-        skippedDetails.push(`第 ${lineNo} 行: 施工号或项目名称缺失，已跳过`);
+        skippedDetails.push(`第 ${lineNo} 行: 施工号(construction_no)或项目名称(project_name)缺失，已跳过`);
         return;
       }
 
@@ -874,7 +922,11 @@ function importProjects(rows) {
         projectName,
         remark || null,
         pipelinePrefix || null,
-        weldPrefix || null
+        weldPrefix || null,
+        ownerUnit || null,
+        constructionUnit || null,
+        completionStatus,
+        completionStatus
       );
       inserted++;
     });
