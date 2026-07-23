@@ -873,6 +873,7 @@ function importProjects(rows) {
   let inserted = 0;
   let skipped = 0;
   const skippedDetails = [];
+  const insertedProjects = [];
 
   db.exec('BEGIN');
   try {
@@ -929,11 +930,19 @@ function importProjects(rows) {
         completionStatus
       );
       inserted++;
+      insertedProjects.push({
+        uuid,
+        construction_no: constructionNo,
+        project_name: projectName,
+        owner_unit: ownerUnit,
+        construction_unit: constructionUnit,
+        completion_status: completionStatus,
+      });
     });
 
     db.exec('COMMIT');
     logger.info({ msg: 'db.import_projects_completed', total: rows.length, inserted, skipped });
-    return { total: rows.length, inserted, skipped, skippedDetails };
+    return { total: rows.length, inserted, skipped, skippedDetails, insertedProjects };
   } catch (e) {
     db.exec('ROLLBACK');
     logger.error({ msg: 'db.import_projects_failed', error: e.message });

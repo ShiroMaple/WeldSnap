@@ -14,6 +14,7 @@ export const dynamic = 'force-dynamic';
 const { withTrace } = require('../../../../middleware/withTrace');
 const db = require('../../../../lib/db');
 const { logger } = require('../../../../lib/logger');
+const { logAudit } = require('../../../../lib/audit');
 
 const DEFAULT_SECRET_TOKEN = process.env.SYNC_API_KEY || 'weldsnap-dee-secret-key';
 
@@ -94,6 +95,24 @@ async function handler(request) {
   try {
     const result = db.importProjects(records);
     logger.info({ msg: 'sync.projects_success', ...result });
+
+    // 记录业务审计日志 (Audit Log)
+    if (Array.isArray(result.insertedProjects)) {
+      result.insertedProjects.forEach((p) => {
+        logAudit(
+          'SYNC_PROJECT_API',
+          `通过致远 OA DEE 接口新建了项目 "${p.project_name}" (施工号: ${p.construction_no})`,
+          {
+            source: 'DEE_REST_SYNC',
+            uuid: p.uuid,
+            project_name: p.project_name,
+            construction_no: p.construction_no,
+            owner_unit: p.owner_unit,
+            construction_unit: p.construction_unit,
+          }
+        );
+      });
+    }
 
     return Response.json({
       success: true,

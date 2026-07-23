@@ -7,6 +7,7 @@ export const dynamic = 'force-dynamic';
 const { withTrace } = require('../../../../../middleware/withTrace');
 const { requireAdmin } = require('../../../../../middleware/auth');
 const db = require('../../../../../lib/db');
+const { logAudit } = require('../../../../../lib/audit');
 const XLSX = require('xlsx');
 
 // 匹配列名的映射规则
@@ -85,6 +86,24 @@ async function handler(request) {
   }));
 
   const result = db.importProjects(records);
+
+  // 记录业务审计日志 (Audit Log)
+  if (Array.isArray(result.insertedProjects)) {
+    result.insertedProjects.forEach((p) => {
+      logAudit(
+        'IMPORT_PROJECT_EXCEL',
+        `通过 Excel 批量导入新建了项目 "${p.project_name}" (施工号: ${p.construction_no})`,
+        {
+          source: 'EXCEL_IMPORT',
+          uuid: p.uuid,
+          project_name: p.project_name,
+          construction_no: p.construction_no,
+          owner_unit: p.owner_unit,
+          construction_unit: p.construction_unit,
+        }
+      );
+    });
+  }
 
   return Response.json({
     success: true,
