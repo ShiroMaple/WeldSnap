@@ -15,6 +15,7 @@ const { withTrace } = require('../../../../../../middleware/withTrace');
 const { requireAdmin } = require('../../../../../../middleware/auth');
 const db = require('../../../../../../lib/db');
 const { getOSSClient } = require('../../../../../../lib/oss');
+const { logAudit } = require('../../../../../../lib/audit');
 const logger = require('../../../../../../lib/logger');
 
 let sharp = null;
@@ -319,6 +320,12 @@ async function handler(request, { params }) {
         fileName: rawFileName,
         base64: buffer.toString('base64'),
       });
+
+      logAudit(
+        'EXPORT_EXCEL',
+        `导出了项目 "${project.project_name}" (施工号: ${project.construction_no}) 的 27 列标注质量管理 Excel 台账 (含 ${downloadedPhotosCount} 张缩略图)`,
+        { project_uuid: uuid, pipeline_uuid: pipelineUuid, records_count: totalRecords, photos_count: downloadedPhotosCount }
+      );
 
       controller.close();
     },

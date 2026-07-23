@@ -13,6 +13,7 @@ const { requireSystemAdmin } = require('../../../../middleware/auth');
 const db = require('../../../../lib/db');
 const { getLocalIPs } = require('../../../../lib/ip');
 const { getOSSConfig } = require('../../../../lib/env');
+const { logAudit } = require('../../../../lib/audit');
 
 /**
  * 字符掩码脱敏
@@ -117,6 +118,12 @@ async function postHandler(request) {
       db.setSetting('excel_compress_quality', String(excelCompression.quality));
     }
   }
+
+  logAudit(
+    'UPDATE_SETTINGS',
+    '更新了系统照片压缩参数与服务器域名配置',
+    { compression, excelCompression, server_public_url }
+  );
 
   return Response.json({ success: true });
 }

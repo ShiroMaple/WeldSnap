@@ -161,7 +161,7 @@ export default function LoginPage() {
             </p>
           </div>
 
-          <h1 className="text-[28px] font-light leading-tight tracking-normal text-[#161616]">
+          <h1 className="text-[26px] font-light leading-tight tracking-normal text-[#161616]">
             管线焊口工序质量记录
           </h1>
         </header>
@@ -183,22 +183,53 @@ export default function LoginPage() {
           <form onSubmit={handleEasyLogin} className="flex flex-col">
             {showNameInput ? (
               <div className="flex flex-col mb-4">
-                <label className="text-[12px] font-normal tracking-[0.32px] text-[#525252] mb-2 leading-relaxed">
-                  检测到您首次使用该浏览器登录，请输入您的姓名：
-                </label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-[12px] font-normal tracking-[0.32px] text-[#525252] leading-relaxed">
+                    {savedName ? '修改您的姓名：' : '检测到您首次使用该浏览器登录，请输入您的姓名：'}
+                  </label>
+                  {savedName && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowNameInput(false);
+                        setError('');
+                      }}
+                      disabled={loading}
+                      className="text-[12px] text-[#6f6f6f] hover:text-[#161616] hover:underline cursor-pointer bg-transparent border-none p-0 transition-colors"
+                    >
+                      取消
+                    </button>
+                  )}
+                </div>
                 <input
                   type="text"
                   value={tempName}
                   onChange={(e) => setTempName(e.target.value)}
                   placeholder="请输入您的姓名"
                   disabled={loading}
+                  autoFocus={showNameInput}
                   className="h-11 px-4 bg-[#f4f4f4] border-t-0 border-x-0 border-b-2 border-transparent focus:border-[#0f62fe] focus:bg-[#e8e8e8] text-[#161616] text-[14px] outline-none transition-colors duration-200 rounded-none placeholder-[#8d8d8d] disabled:opacity-50"
                 />
               </div>
             ) : (
               <div className="flex flex-col mb-4">
-                <span className="text-[12px] text-[#6f6f6f] block">当前设备/浏览器的简易登录身份：</span>
-                <div className="text-[18px] font-medium text-[#0f62fe] mt-1 tracking-wide">
+                <div className="flex items-center justify-between">
+                  <span className="text-[12px] text-[#6f6f6f]">当前设备/浏览器的简易登录身份：</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const cleanName = savedName.replace(/#\d{4}$/, '');
+                      setTempName(cleanName);
+                      setShowNameInput(true);
+                      setError('');
+                    }}
+                    disabled={loading}
+                    className="text-[12px] font-medium text-[#0f62fe] hover:underline cursor-pointer bg-transparent border-none p-0 flex items-center gap-1"
+                  >
+                    <span>修改姓名</span>
+                  </button>
+                </div>
+                <div className="text-[24px] font-medium text-[#0f62fe] mt-1 tracking-wide">
                   {savedName}
                 </div>
               </div>

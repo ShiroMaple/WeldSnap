@@ -7,6 +7,7 @@
 const { withTrace } = require('../../../../../middleware/withTrace');
 const { requireAdmin } = require('../../../../../middleware/auth');
 const { setLogLevel, getLogLevel } = require('../../../../../lib/logger');
+const { logAudit } = require('../../../../../lib/audit');
 const db = require('../../../../../lib/db');
 
 const VALID_LEVELS = ['trace', 'debug', 'info', 'audit', 'warn', 'error', 'fatal'];
@@ -44,6 +45,12 @@ async function postHandler(request) {
 
   setLogLevel(level);
   db.setSetting('log_level', level);
+
+  logAudit(
+    'CHANGE_LOG_LEVEL',
+    `将全局日志记录级别修改为 "${level.toUpperCase()}"`,
+    { level }
+  );
 
   return Response.json({
     success: true,

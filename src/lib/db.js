@@ -950,6 +950,57 @@ function importProjects(rows) {
   }
 }
 
+function updateProjectsStatus(rows) {
+  let updated = 0;
+  let notFound = 0;
+  const notFoundDetails = [];
+  const updatedProjects = [];
+
+  db.exec('BEGIN');
+  try {
+    const findStmt = db.prepare('SELECT id, uuid, construction_no, project_name, completion_status FROM projects WHERE construction_no = ?');
+    const updateStmt = db.prepare('UPDATE projects SET completion_status = ?, status = ? WHERE construction_no = ?');
+
+    rows.forEach((r, idx) => {
+      const lineNo = idx + 1;
+      const constructionNo = String(r.construction_no || r.施工号 || r.施工编号 || '').trim();
+      const completionStatus = String(r.completion_status || r.项目完工状态 || r.完工状态 || r.状态 || r.status || '').trim();
+
+      if (!constructionNo || !completionStatus) {
+        notFound++;
+        notFoundDetails.push(`第 ${lineNo} 项: 施工号或完工状态缺失，无法更新`);
+        return;
+      }
+
+      const existing = findStmt.get(constructionNo);
+      if (!existing) {
+        notFound++;
+        notFoundDetails.push(`第 ${lineNo} 项: 未能找到施工号为 [${constructionNo}] 的项目`);
+        return;
+      }
+
+      const oldStatus = existing.completion_status || '进行中';
+      updateStmt.run(completionStatus, completionStatus, constructionNo);
+      updated++;
+      updatedProjects.push({
+        uuid: existing.uuid,
+        construction_no: constructionNo,
+        project_name: existing.project_name,
+        old_status: oldStatus,
+        completion_status: completionStatus,
+      });
+    });
+
+    db.exec('COMMIT');
+    logger.info({ msg: 'db.update_projects_status_completed', total: rows.length, updated, notFound });
+    return { total: rows.length, updated, notFound, notFoundDetails, updatedProjects };
+  } catch (e) {
+    db.exec('ROLLBACK');
+    logger.error({ msg: 'db.update_projects_status_failed', error: e.message });
+    throw e;
+  }
+}
+
 // ─── 导出 ────────────────────────────────────────────────
 module.exports = {
   db,
@@ -968,6 +1019,7 @@ module.exports = {
   updateProject,
   deleteProject,
   importProjects,
+  updateProjectsStatus,
 
   // Pipelines
   listPipelines,

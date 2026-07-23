@@ -7,9 +7,11 @@ export const dynamic = 'force-dynamic';
 const { withTrace } = require('../../../../middleware/withTrace');
 const { clearSession } = require('../../../../lib/session');
 const { logger } = require('../../../../lib/logger');
+const { logAudit } = require('../../../../lib/audit');
 
 async function handler(request) {
   logger.info({ msg: 'auth.logout' });
+  logAudit('USER_LOGOUT', '登出了系统');
 
   const headers = new Headers({
     'Content-Type': 'application/json',

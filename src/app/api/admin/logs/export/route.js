@@ -11,6 +11,7 @@ const fs = require('fs');
 const path = require('path');
 const { withTrace } = require('../../../../../middleware/withTrace');
 const { requireAdmin } = require('../../../../../middleware/auth');
+const { logAudit } = require('../../../../../lib/audit');
 
 const LEVEL_MAP = {
   10: 'TRACE',
@@ -115,6 +116,12 @@ async function getHandler(request) {
   });
 
   const nowStr = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+
+  logAudit(
+    'EXPORT_LOGS',
+    `导出了系统日志文件 (${filtered.length} 条记录, 格式: ${format.toUpperCase()})`,
+    { format, count: filtered.length }
+  );
 
   if (format === 'csv') {
     // 导出 CSV

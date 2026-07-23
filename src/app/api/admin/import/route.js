@@ -7,6 +7,7 @@ export const dynamic = 'force-dynamic';
 const { withTrace } = require('../../../../middleware/withTrace');
 const { requireAdmin } = require('../../../../middleware/auth');
 const db = require('../../../../lib/db');
+const { logAudit } = require('../../../../lib/audit');
 const XLSX = require('xlsx');
 
 // 必需列的匹配规则（与 V1.0 保持一致，支持模糊匹配）
@@ -98,6 +99,15 @@ async function handler(request) {
 
   // 6. 执行事务入库
   const result = db.importWeldRecords(records, projectUuid);
+
+  const project = db.getProjectByUuid(projectUuid);
+  const projName = project ? project.project_name : '指定项目';
+
+  logAudit(
+    'IMPORT_WELD_RECORDS_EXCEL',
+    `通过 Excel 批量导入管线与焊口台账至 "${projName}" (解析: ${records.length} 条, 新增: ${result.inserted || 0} 条, 跳过: ${result.skipped || 0} 条)`,
+    { project_uuid: projectUuid, ...result }
+  );
 
   return Response.json({
     success: true,

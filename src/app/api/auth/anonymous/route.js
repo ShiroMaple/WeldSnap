@@ -12,6 +12,7 @@ const { withTrace } = require('../../../../middleware/withTrace');
 const { setSession } = require('../../../../lib/session');
 const db = require('../../../../lib/db');
 const { logger } = require('../../../../lib/logger');
+const { logAudit } = require('../../../../lib/audit');
 const crypto = require('node:crypto');
 
 async function handler(request) {
@@ -35,6 +36,8 @@ async function handler(request) {
   }
 
   const username = `anon_${deviceId}`;
+  let isNewAccount = false;
+  let isNameUpdated = false;
 
   // 1. 查询是否存在该设备绑定的匿名用户
   let user = db.db
@@ -79,7 +82,14 @@ async function handler(request) {
       .prepare('SELECT id, username, role, display_name FROM users WHERE username = ?')
       .get(username);
 
+    isNewAccount = true;
     logger.info({ msg: 'auth.anonymous_created', username, displayName: finalDisplayName });
+
+    logAudit(
+      'CREATE_ANONYMOUS_USER',
+      `通过现场简易登录创建了施工人员账户 "${finalDisplayName}" (设备账号: ${username})`,
+      { username, display_name: finalDisplayName, role: 'worker', device_id: deviceId }
+    );
   } else {
     // 5. 如果设备已注册，但请求传递了新姓名，则允许其更新姓名（同样做重名自增处理）
     if (rawName && rawName.trim() && rawName.trim() !== user.display_name) {
@@ -99,10 +109,26 @@ async function handler(request) {
         .run(finalDisplayName, username);
 
       user.display_name = finalDisplayName;
+      isNameUpdated = true;
       logger.info({ msg: 'auth.anonymous_name_updated', username, displayName: finalDisplayName });
+
+      logAudit(
+        'UPDATE_ANONYMOUS_NAME',
+        `将简易账户 (${username}) 的姓名更新为 "${finalDisplayName}"`,
+        { username, display_name: finalDisplayName }
+      );
     }
 
     logger.info({ msg: 'auth.anonymous_login_success', username });
+  }
+
+  // 记录登录审计日志
+  if (!isNewAccount && !isNameUpdated) {
+    logAudit(
+      'USER_LOGIN',
+      `施工人员 "${user.display_name || user.username}" 登录了系统`,
+      { username: user.username, role: user.role, type: 'ANONYMOUS' }
+    );
   }
 
   // 6. 更新最后登录时间并写入 Session
