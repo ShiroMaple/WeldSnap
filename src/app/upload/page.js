@@ -1125,39 +1125,43 @@ function UploadContent() {
       {previewIndex !== -1 && previewItems[previewIndex] && (
         <div
           onClick={() => setPreviewIndex(-1)}
-          className="fixed inset-0 z-[990] bg-[#161616]/95 flex flex-col justify-between p-4"
+          className="fixed inset-0 z-[990] bg-[#161616]/95 flex flex-col"
         >
-          {/* 占位控制区，防止大图内容遮挡顶层面包屑或与之重合 */}
-          <div className="h-[75px] flex-shrink-0" onClick={(e) => e.stopPropagation()} />
-
-          {/* 图片主视区 */}
+          {/* 1. 绿框内的工序和关闭按钮：固定在屏幕最上方，高度为 h-12 (48px)，正好覆盖 Sticky Header */}
           <div
-            className="flex-1 flex flex-col items-center justify-center relative"
+            className="fixed top-0 inset-x-0 h-12 bg-[#161616] text-white flex items-center justify-between px-4 z-[996] border-b border-[#262626] select-none"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* 顶栏控制（显示工序名称与不合格状态） */}
-            <div className="w-full max-w-[500px] mb-3 flex justify-between items-center text-white px-2 select-none">
-              <div className="flex items-center space-x-2">
-                <span className="text-[16px] font-semibold">
-                  {previewItems[previewIndex].label}
+            <div className="flex items-center space-x-2">
+              <span className="text-[16px] font-semibold">
+                {previewItems[previewIndex].label}
+              </span>
+              {previewItems[previewIndex].isRejected && (
+                <span className="bg-[#da1e28] text-white text-[11px] px-2 py-0.5 font-medium rounded-none">
+                  不合格
                 </span>
-                {previewItems[previewIndex].isRejected && (
-                  <span className="bg-[#da1e28] text-white text-[11px] px-2 py-0.5 font-medium rounded-none">
-                    不合格
-                  </span>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={() => setPreviewIndex(-1)}
-                className="bg-transparent border-none text-[#c6c6c6] hover:text-white text-[24px] cursor-pointer outline-none p-1"
-              >
-                ✕
-              </button>
+              )}
             </div>
+            <button
+              type="button"
+              onClick={() => setPreviewIndex(-1)}
+              className="bg-transparent border-none text-[#c6c6c6] hover:text-white text-[24px] cursor-pointer outline-none p-1"
+            >
+              ✕
+            </button>
+          </div>
 
-            {/* 大图容器 */}
-            <div className="w-full max-w-[500px] aspect-[4/3] bg-black border border-[#393939] flex items-center justify-center overflow-hidden">
+          {/* 2. 占位区：高度包含绿框 h-12 加上面包屑的大致高度，确保大图主体内容在面包屑下方渲染 */}
+          {/* 面包屑 z-index 为 995 会完美悬浮在其上方 */}
+          <div className="h-[105px] flex-shrink-0" onClick={(e) => e.stopPropagation()} />
+
+          {/* 3. 图片展示与控制区域：填满下方的红框区域，左右边距和底边距设置为 p-4 */}
+          <div
+            className="flex-1 flex flex-col justify-between p-4 pb-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* 大图容器：使用 flex-1 撑满红框中的剩余高度，大图 object-contain 自适应缩放 */}
+            <div className="flex-1 w-full max-w-[500px] mx-auto bg-black border border-[#262626] flex items-center justify-center overflow-hidden">
               <img
                 src={`/api/photo/preview?path=${encodeURIComponent(previewItems[previewIndex].path)}`}
                 alt={previewItems[previewIndex].label}
@@ -1165,17 +1169,17 @@ function UploadContent() {
               />
             </div>
 
-            {/* 左右导航按钮 */}
+            {/* 左右导航切换按钮 */}
             {previewItems.length > 1 && (
-              <div className="w-full max-w-[500px] flex justify-between mt-4 px-2 select-none">
+              <div className="w-full max-w-[500px] mx-auto flex justify-between mt-4 px-1 select-none flex-shrink-0">
                 <button
                   type="button"
                   disabled={previewIndex === 0}
                   onClick={() => setPreviewIndex(prev => prev - 1)}
                   className={`h-11 px-5 text-[14px] font-semibold border-none flex items-center gap-1.5 transition-colors duration-150 rounded-none outline-none ${
                     previewIndex > 0
-                      ? 'bg-[#393939] text-white active:bg-[#4c4c4c] cursor-pointer'
-                      : 'bg-[#262626] text-[#525252] cursor-not-allowed'
+                      ? 'bg-[#262626] hover:bg-[#393939] text-white active:bg-[#4c4c4c] cursor-pointer'
+                      : 'bg-[#1a1a1a] text-[#525252] cursor-not-allowed'
                   }`}
                 >
                   ‹ 上一张
@@ -1189,31 +1193,14 @@ function UploadContent() {
                   onClick={() => setPreviewIndex(prev => prev + 1)}
                   className={`h-11 px-5 text-[14px] font-semibold border-none flex items-center gap-1.5 transition-colors duration-150 rounded-none outline-none ${
                     previewIndex < previewItems.length - 1
-                      ? 'bg-[#0f62fe] text-white active:bg-[#0353e9] cursor-pointer'
-                      : 'bg-[#262626] text-[#525252] cursor-not-allowed'
+                      ? 'bg-[#0f62fe] hover:bg-[#0353e9] text-white active:bg-[#002d9c] cursor-pointer'
+                      : 'bg-[#1a1a1a] text-[#525252] cursor-not-allowed'
                   }`}
                 >
                   下一张 ›
                 </button>
               </div>
             )}
-          </div>
-
-          {/* 底栏说明与关闭按钮 */}
-          <div
-            className="w-full text-center pb-6 pt-4 flex-shrink-0 flex flex-col items-center gap-3 select-none"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <span className="text-[12px] text-[#8d8d8d]">
-              点击图片外部空白区域或右上角 ✕ 可返回工作台
-            </span>
-            <button
-              type="button"
-              onClick={() => setPreviewIndex(-1)}
-              className="h-10 px-8 bg-[#393939] hover:bg-[#4c4c4c] text-white text-[13px] font-medium border-none cursor-pointer rounded-none outline-none"
-            >
-              关闭预览
-            </button>
           </div>
         </div>
       )}
