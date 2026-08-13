@@ -78,6 +78,36 @@ function UploadContent() {
   const [statusMsg, setStatusMsg] = useState({ zudui: '未上传', dadi: '未上传', gaimian: '未上传' });
   const [isSubmitting, setIsSubmitting] = useState({ zudui: false, dadi: false, gaimian: false });
 
+  // ─── 预览大图状态 ───────────────────────────────────────────
+  const [previewIndex, setPreviewIndex] = useState(-1); // -1 表示关闭
+
+  // 获取当前焊口下所有已上传的工序照片列表（包含被驳回的 REJECTED:）
+  const previewItems = useMemo(() => {
+    const items = [];
+    const activeWeldRecord = weldsList.find((w) => w.weld_no === selectedWeld);
+    if (!activeWeldRecord) return items;
+
+    PHOTO_TYPES.forEach((type) => {
+      const path = activeWeldRecord[`photo_${type.id}`];
+      if (path) {
+        items.push({
+          typeId: type.id,
+          label: type.name, // 例如 "1. 组对工序"
+          path: path,
+          isRejected: path.startsWith('REJECTED:'),
+        });
+      }
+    });
+    return items;
+  }, [weldsList, selectedWeld]);
+
+  const handleOpenPreview = (typeId) => {
+    const idx = previewItems.findIndex((item) => item.typeId === typeId);
+    if (idx !== -1) {
+      setPreviewIndex(idx);
+    }
+  };
+
   // 文件 Input Refs
   const fileInputRefs = {
     zudui: useRef(null),
@@ -114,6 +144,7 @@ function UploadContent() {
 
   // 统一层级切换包装函数 (自动向 history 压栈)
   const navigateToLevel = (newLevel) => {
+    setPreviewIndex(-1); // 切换层级时自动关闭大图预览
     if (!isPopStateNav.current && typeof window !== 'undefined') {
       try {
         if (newLevel !== currentLevel) {
@@ -417,6 +448,7 @@ function UploadContent() {
   const hasNextWeld = currentWeldIndex >= 0 && currentWeldIndex < nameSortedWelds.length - 1;
 
   const handlePrevWeld = () => {
+    setPreviewIndex(-1); // 切换焊口时关闭大图预览
     if (hasPrevWeld) {
       const targetWeld = nameSortedWelds[currentWeldIndex - 1];
       handleSelectWeld(targetWeld.weld_no, weldsList);
@@ -424,6 +456,7 @@ function UploadContent() {
   };
 
   const handleNextWeld = () => {
+    setPreviewIndex(-1); // 切换焊口时关闭大图预览
     if (hasNextWeld) {
       const targetWeld = nameSortedWelds[currentWeldIndex + 1];
       handleSelectWeld(targetWeld.weld_no, weldsList);
@@ -628,7 +661,7 @@ function UploadContent() {
 
       {/* 面包屑导航指示器 (与当前层级 currentLevel 严格联动) */}
       {currentLevel > 0 && (
-        <div className="bg-white border border-[#e0e0e0] p-2.5 mb-4 text-[20px] text-[#525252] flex items-center overflow-x-auto whitespace-nowrap">
+        <div className="bg-white border border-[#e0e0e0] p-2.5 mb-4 text-[20px] text-[#525252] flex items-center overflow-x-auto whitespace-nowrap relative z-[995]">
           <span
             className={`cursor-pointer hover:underline ${currentLevel === 0 ? 'font-bold text-[#161616]' : 'text-[#0f62fe]'}`}
             onClick={() => navigateToLevel(0)}
@@ -982,7 +1015,10 @@ function UploadContent() {
                     {/* 中间列: 预览照片 */}
                     <div className="col-span-4 flex items-center justify-center">
                       {isDone ? (
-                        <div className="w-24 h-20 bg-[#f4f4f4] border border-[#e0e0e0] flex items-center justify-center overflow-hidden">
+                        <div
+                          onClick={() => handleOpenPreview(type.id)}
+                          className="w-24 h-20 bg-[#f4f4f4] border border-[#e0e0e0] flex items-center justify-center overflow-hidden cursor-pointer hover:opacity-85 active:opacity-75 transition-opacity"
+                        >
                           <img
                             src={`/api/photo/preview?path=${encodeURIComponent(path)}`}
                             alt={type.label}
@@ -990,7 +1026,10 @@ function UploadContent() {
                           />
                         </div>
                       ) : isRejected ? (
-                        <div className="w-24 h-20 bg-[#f4f4f4] border border-[#da1e28] flex flex-col items-center justify-center overflow-hidden relative">
+                        <div
+                          onClick={() => handleOpenPreview(type.id)}
+                          className="w-24 h-20 bg-[#f4f4f4] border border-[#da1e28] flex flex-col items-center justify-center overflow-hidden relative cursor-pointer hover:opacity-85 active:opacity-75 transition-opacity"
+                        >
                           <img
                             src={`/api/photo/preview?path=${encodeURIComponent(rawPath)}`}
                             alt="不合格预览"
@@ -1081,6 +1120,103 @@ function UploadContent() {
           handleSelectPipelineUuid(scannedUuid);
         }}
       />
+
+      {/* ─── 大图查看 Modal ──────────────────────────── */}
+      {previewIndex !== -1 && previewItems[previewIndex] && (
+        <div
+          onClick={() => setPreviewIndex(-1)}
+          className="fixed inset-0 z-[990] bg-[#161616]/95 flex flex-col justify-between p-4"
+        >
+          {/* 占位控制区，防止大图内容遮挡顶层面包屑或与之重合 */}
+          <div className="h-[75px] flex-shrink-0" onClick={(e) => e.stopPropagation()} />
+
+          {/* 图片主视区 */}
+          <div
+            className="flex-1 flex flex-col items-center justify-center relative"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* 顶栏控制（显示工序名称与不合格状态） */}
+            <div className="w-full max-w-[500px] mb-3 flex justify-between items-center text-white px-2 select-none">
+              <div className="flex items-center space-x-2">
+                <span className="text-[16px] font-semibold">
+                  {previewItems[previewIndex].label}
+                </span>
+                {previewItems[previewIndex].isRejected && (
+                  <span className="bg-[#da1e28] text-white text-[11px] px-2 py-0.5 font-medium rounded-none">
+                    不合格
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewIndex(-1)}
+                className="bg-transparent border-none text-[#c6c6c6] hover:text-white text-[24px] cursor-pointer outline-none p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* 大图容器 */}
+            <div className="w-full max-w-[500px] aspect-[4/3] bg-black border border-[#393939] flex items-center justify-center overflow-hidden">
+              <img
+                src={`/api/photo/preview?path=${encodeURIComponent(previewItems[previewIndex].path)}`}
+                alt={previewItems[previewIndex].label}
+                className="max-w-full max-h-full object-contain"
+              />
+            </div>
+
+            {/* 左右导航按钮 */}
+            {previewItems.length > 1 && (
+              <div className="w-full max-w-[500px] flex justify-between mt-4 px-2 select-none">
+                <button
+                  type="button"
+                  disabled={previewIndex === 0}
+                  onClick={() => setPreviewIndex(prev => prev - 1)}
+                  className={`h-11 px-5 text-[14px] font-semibold border-none flex items-center gap-1.5 transition-colors duration-150 rounded-none outline-none ${
+                    previewIndex > 0
+                      ? 'bg-[#393939] text-white active:bg-[#4c4c4c] cursor-pointer'
+                      : 'bg-[#262626] text-[#525252] cursor-not-allowed'
+                  }`}
+                >
+                  ‹ 上一张
+                </button>
+                <span className="text-[14px] text-[#c6c6c6] flex items-center">
+                  {previewIndex + 1} / {previewItems.length}
+                </span>
+                <button
+                  type="button"
+                  disabled={previewIndex === previewItems.length - 1}
+                  onClick={() => setPreviewIndex(prev => prev + 1)}
+                  className={`h-11 px-5 text-[14px] font-semibold border-none flex items-center gap-1.5 transition-colors duration-150 rounded-none outline-none ${
+                    previewIndex < previewItems.length - 1
+                      ? 'bg-[#0f62fe] text-white active:bg-[#0353e9] cursor-pointer'
+                      : 'bg-[#262626] text-[#525252] cursor-not-allowed'
+                  }`}
+                >
+                  下一张 ›
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* 底栏说明与关闭按钮 */}
+          <div
+            className="w-full text-center pb-6 pt-4 flex-shrink-0 flex flex-col items-center gap-3 select-none"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <span className="text-[12px] text-[#8d8d8d]">
+              点击图片外部空白区域或右上角 ✕ 可返回工作台
+            </span>
+            <button
+              type="button"
+              onClick={() => setPreviewIndex(-1)}
+              className="h-10 px-8 bg-[#393939] hover:bg-[#4c4c4c] text-white text-[13px] font-medium border-none cursor-pointer rounded-none outline-none"
+            >
+              关闭预览
+            </button>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

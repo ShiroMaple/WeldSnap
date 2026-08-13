@@ -1,0 +1,454 @@
+❯ 当前“管线焊口总览”的页面是否存在刷新机制？                                    
+
+  Thought for 52s, searched for 3 patterns (ctrl+o to expand)
+
+● 当前的刷新机制是纯手动触发的，没有自动刷新。具体情况：
+
+  现有的刷新触发点
+
+  ┌─────────────────────┬───────────────────────────────────────────────────┐
+  │      触发时机       │                     刷新范围                      │
+  ├─────────────────────┼───────────────────────────────────────────────────┤
+  │ 切换 Tab（总览/成员 │ useEffect([activeTab]) 重新拉取对应 Tab 数据      │
+  │ /设置）             │                                                   │
+  ├─────────────────────┼───────────────────────────────────────────────────┤
+  │ 选中项目            │ fetchStats + fetchPipelines                       │
+  ├─────────────────────┼───────────────────────────────────────────────────┤
+  │ 选中管线            │ fetchRecords（焊口矩阵）                          │
+  ├─────────────────────┼───────────────────────────────────────────────────┤
+  │ CRUD 操作后         │ 新建/编辑/删除项目、新增管线/焊口、导入 Excel、上 │
+  │ onRefresh 回调      │ 传照片、驳回照片、批量删除等操作完成后各自调用    │
+  └─────────────────────┴───────────────────────────────────────────────────┘
+
+  缺失的场景
+
+  ┌────────────────────┬────────────────────────────────────────────────────┐
+  │        场景        │                        问题                        │
+  ├────────────────────┼────────────────────────────────────────────────────┤
+  │ 施工人员手机上传照 │ 管理台页面不会自动感知，需管理员手动点击管线或切换 │
+  │ 片后               │  Tab 才能看到最新状态                              │
+  ├────────────────────┼────────────────────────────────────────────────────┤
+  │ 浏览器从后台切回   │ 没有 visibilitychange 监听，不会自动刷新           │
+  ├────────────────────┼────────────────────────────────────────────────────┤
+  │ 多管理员同时操作   │ 没有轮询或 WebSocket，一个管理员的操作对另一个管理 │
+  │                    │ 员不可见直到手动刷新                               │
+  ├────────────────────┼────────────────────────────────────────────────────┤
+  │ 页面无手动刷新按钮 │ 用户只能通过切换 Tab                               │
+  │                    │ 或点击管线来间接触发刷新，没有显式的"刷新"按钮     │
+  └────────────────────┴────────────────────────────────────────────────────┘
+
+  如果你需要补一个轻量的刷新方案，最实用的是页面获得焦点时自动刷新（visibilitych
+  ange 或 focus 事件）——零额外依赖，一行 useEffect 解决。需要我加上吗？
+
+✻ Sautéed for 1m 0s
+
+❯ 在焊口筛选一栏的最右侧添加一个刷新按钮，点击后刷新当前项目管线、焊口的最新状  
+  态，并更新统计卡片中的数值，但不能刷新掉当前的筛选和排序等状态；              
+  并且增加自动刷新机制，有如下几个条件：                                        
+  每60s执行一次，但处于编辑管线名称、编辑焊口名称、上传图片、查看图片时跳过刷新 
+  ；                                                                            
+  执行添加管线、添加焊口、导入、编辑名称等操作后，自动刷新一次。                
+
+  Thought for 33s (ctrl+o to expand)
+
+● 先看焊口筛选栏的布局，确定插入点。
+
+  Thought for 2m 5s, searched for 1 pattern, read 1 file (ctrl+o to expand)
+
+● 改动涉及 admin/page.js（刷新逻辑+按钮）、PipelineTree.jsx（busy
+  上报）、WeldMatrix.jsx（busy 上报）三个文件。
+
+● Update(src\app\admin\page.js)
+  ⎿  Added 1 line, removed 1 line
+      12   *       支持直接网页端扫码、直传、驳回重传、批量删除熔断和 JSZ
+          ip+FileSaver 客户端零服务器负载批量打包。
+      13   */
+      14  
+      15 -import { useState, useEffect } from 'react';                   
+      15 +import { useState, useEffect, useRef, useCallback } from 'react
+         +';                                                             
+      16  import StatsBar from '@/components/StatsBar';
+      17  import PipelineTree from '@/components/PipelineTree';
+      18  import WeldMatrix from '@/components/WeldMatrix';
+
+  Thought for 7s, read 1 file (ctrl+o to expand)
+
+● Update(src\app\admin\page.js)
+  ⎿  Added 25 lines
+      60    const [filterWeld, setFilterWeld] = useState('');
+      61    const [filterStatus, setFilterStatus] = useState('');
+      62  
+      63 +  // ─── UI 忙碌状态（编辑/上传/查看大图时不触发自动刷新） ────
+      64 +  const busyRef = useRef(false);                               
+      65 +  const setBusy = useCallback((val) => { busyRef.current = val;
+         + }, []);                                                       
+      66 +                                                               
+      67 +  // ─── 统一刷新函数（保留当前筛选/排序状态） ────────────────
+         +─                                                              
+      68 +  const handleRefresh = useCallback(() => {                    
+      69 +    if (!selectedProjectUuid) return;                          
+      70 +    fetchStats(selectedProjectUuid);                           
+      71 +    fetchPipelines(selectedProjectUuid);                       
+      72 +    if (selectedPipelineUuid) {                                
+      73 +      fetchRecords(selectedPipelineUuid);                      
+      74 +    }                                                          
+      75 +  }, [selectedProjectUuid, selectedPipelineUuid]);             
+      76 +                                                               
+      77 +  // ─── 60 秒自动刷新（编辑/上传/查看大图时跳过） ────────────
+         +─                                                              
+      78 +  useEffect(() => {                                            
+      79 +    if (activeTab !== 'dashboard' || !selectedProjectUuid) retu
+         +rn;                                                            
+      80 +    const timer = setInterval(() => {                          
+      81 +      if (!busyRef.current) {                                  
+      82 +        handleRefresh();                                       
+      83 +      }                                                        
+      84 +    }, 60000);                                                 
+      85 +    return () => clearInterval(timer);                         
+      86 +  }, [activeTab, selectedProjectUuid, handleRefresh]);         
+      87 +                                                               
+      88    // 成员与设置数据
+      89    const [users, setUsers] = useState([]);
+      90    const [settings, setSettings] = useState(null);
+
+  Thought for 31s, searched for 3 patterns, read 1 file (ctrl+o to expand)
+
+● Update(src\app\admin\page.js)
+  ⎿  Added 8 lines
+      793                            >
+      794                              重置筛选
+      795                            </button>
+      796 +                          <div className="flex-1" />          
+      797 +                          <button                             
+      798 +                            onClick={handleRefresh}           
+      799 +                            className="h-8 px-3 border border-
+          +[#c6c6c6] bg-white hover:bg-[#e8e8e8] text-[12px] text-[#16161
+          +6] cursor-pointer rounded-none font-medium"                   
+      800 +                            title="刷新当前项目数据"          
+      801 +                          >                                   
+      802 +                            🔄 刷新                           
+      803 +                          </button>                           
+      804                          </>
+      805                        ) : (
+      806                          <span className="text-[12px] text-[#8d
+           8d8d] font-mono">请从左侧选择管线号查看焊口进度</span>
+
+  Thought for 49s, searched for 5 patterns, read 1 file (ctrl+o to expand)
+
+● 现在传 onBusyChange 给子组件，并更新 onRefresh 为统一的 handleRefresh：
+
+● Update(src\app\admin\page.js)  ⎿  Added 2 lines, removed 4 lines
+      748                        setShowImportModal(true);
+      749                      }}
+      750                      onShowQR={handleOpenQRModal}
+      751 -                    onRefresh={() => {                        
+      752 -                      fetchStats(selectedProjectUuid);        
+      753 -                      fetchPipelines(selectedProjectUuid);    
+      754 -                    }}                                        
+      751 +                    onRefresh={handleRefresh}                 
+      752 +                    onBusyChange={setBusy}                    
+      753                      currentUser={currentUser}
+      754                    />
+      755  
+
+  Thought for 5s, read 1 file (ctrl+o to expand)
+
+● Update(src\app\admin\page.js)
+  ⎿  Added 2 lines, removed 4 lines
+      807  
+      808                      <WeldMatrix
+      809                        records={weldRecords}
+      810 -                      onRefresh={() => {                      
+      811 -                        fetchRecords(selectedPipelineUuid);   
+      812 -                        fetchStats(selectedProjectUuid);      
+      813 -                      }}                                      
+      810 +                      onRefresh={handleRefresh}               
+      811 +                      onBusyChange={setBusy}                  
+      812                        currentUser={currentUser}
+      813                        pipelineUuid={selectedPipelineUuid}
+      814                        projectInfo={selectedProject}
+
+  Thought for 4s (ctrl+o to expand)
+
+● Update(src\components\PipelineTree.jsx)
+  ⎿  Error editing file
+
+  Thought for 1m 5s, read 1 file (ctrl+o to expand)
+
+● Update(src\components\PipelineTree.jsx)
+  ⎿  Added 1 line
+      20    onImportClick = () => { },
+      21    onShowQR = () => { },
+      22    onRefresh = () => { },
+      23 +  onBusyChange = () => { },                                    
+      24    currentUser = {},
+      25  }) {
+      26    const [filterQuery, setFilterQuery] = useState('');
+
+  Thought for 3s (ctrl+o to expand)
+
+● Update(src\components\PipelineTree.jsx)
+  ⎿  Added 1 line
+      162    const handleStartEditPipeline = (uuid, currentNo) => {
+      163      setEditingUuid(uuid);
+      164      setEditingValue(currentNo);
+      165 +    onBusyChange(true);                                       
+      166    };
+      167  
+      168    const handleSaveEditPipeline = async () => {
+
+  Thought for 3s (ctrl+o to expand)
+
+● Update(src\components\PipelineTree.jsx)
+  ⎿  Added 2 lines
+      184        if (resp.ok && data.success) {
+      185          setEditingUuid('');
+      186          setEditingValue('');
+      187 +        onBusyChange(false);                                  
+      188          if (onRefresh) onRefresh();
+      189        } else {
+      190          alert(data.error || '编辑失败');
+     ...
+      199    const handleCancelEditPipeline = () => {
+      200      setEditingUuid('');
+      201      setEditingValue('');
+      202 +    onBusyChange(false);                                      
+      203    };
+      204  
+      205    // 6. 打印链接生成
+
+  Thought for 14s, read 1 file (ctrl+o to expand)
+
+● Update(src\components\WeldMatrix.jsx)
+  ⎿  Added 1 line
+      18  export default function WeldMatrix({
+      19    records = [],
+      20    onRefresh = () => { },
+      21 +  onBusyChange = () => { },                                    
+      22    currentUser = {},
+      23    pipelineUuid = '',
+      24    projectInfo = { pipeline_prefix: '', weld_prefix: '', constru
+          ction_no: '', project_name: '' },
+
+  Thought for 2s (ctrl+o to expand)
+
+● Update(src\components\WeldMatrix.jsx)
+  ⎿  Added 1 line
+      66    const handleStartEditWeld = (uuid, currentNo) => {
+      67      setEditingUuid(uuid);
+      68      setEditingValue(currentNo);
+      69 +    onBusyChange(true);                                        
+      70    };
+      71  
+      72    const handleSaveEditWeld = async () => {
+
+  Thought for 11s (ctrl+o to expand)
+
+● Update(src\components\WeldMatrix.jsx)
+  ⎿  Added 2 lines
+      88        if (resp.ok && data.success) {
+      89          setEditingUuid('');
+      90          setEditingValue('');
+      91 +        onBusyChange(false);                                   
+      92          if (onRefresh) onRefresh();
+      93        } else {
+      94          alert(data.error || '编辑失败');
+     ...
+      103    const handleCancelEditWeld = () => {
+      104      setEditingUuid('');
+      105      setEditingValue('');
+      106 +    onBusyChange(false);                                      
+      107    };
+      108  
+      109    const toggleSort = (key) => {
+
+  Thought for 3s (ctrl+o to expand)
+
+● Update(src\components\WeldMatrix.jsx)
+  ⎿  Added 6 lines
+      393      }
+      394    };
+      395  
+      396 +  // 上传开始时标记忙碌                                       
+      397    const handleFileChange = async (e) => {
+      398      const file = e.target.files[0];
+      399      if (!file || !uploadTarget) return;
+      400 +    onBusyChange(true);                                       
+      401  
+      402 +  const handleFileChange = async (e) => {                     
+      403 +    const file = e.target.files[0];                           
+      404 +    if (!file || !uploadTarget) return;                       
+      405 +                                                              
+      406      const { type, uuid } = uploadTarget;
+      407      setUploadError('');
+      408      setUploadStatus('compressing');
+
+  Thought for 14s, searched for 2 patterns, read 1 file (ctrl+o to expand)
+
+● Update(src\components\WeldMatrix.jsx)
+  ⎿  Added 1 line, removed 6 lines
+      393      }
+      394    };
+      395  
+      396 -  // 上传开始时标记忙碌                                       
+      396    const handleFileChange = async (e) => {
+      397      const file = e.target.files[0];
+      398      if (!file || !uploadTarget) return;
+      400 -    onBusyChange(true);                                       
+      399  
+      402 -  const handleFileChange = async (e) => {                     
+      403 -    const file = e.target.files[0];                           
+      404 -    if (!file || !uploadTarget) return;                       
+      405 -                                                              
+      400 +    onBusyChange(true);                                       
+      401      const { type, uuid } = uploadTarget;
+      402      setUploadError('');
+      403      setUploadStatus('compressing');
+
+  Thought for 10s, read 1 file (ctrl+o to expand)
+
+● Update(src\components\WeldMatrix.jsx)
+  ⎿  Added 2 lines
+      449        }
+      450  
+      451        setUploadStatus('success');
+      452 +      onBusyChange(false);                                    
+      453        setTimeout(() => {
+      454          setUploadStatus('idle');
+      455          setUploadTarget(null);
+     ...
+      459      } catch (err) {
+      460        setUploadStatus('error');
+      461        setUploadError(err.message || '上传异常');
+      462 +      onBusyChange(false);                                    
+      463      } finally {
+      464        e.target.value = '';
+      465      }
+
+  Thought for 3s (ctrl+o to expand)
+
+● Update(src\components\WeldMatrix.jsx)
+  ⎿  Added 2 lines
+      164      setViewPhotoPath(path);
+      165      setViewPhotoInfo({ pipelineNo, weldNo, typeLabel, typeKey 
+           });
+      166      setHoveredPhoto(null);
+      167 +    onBusyChange(true);                                       
+      168    };
+      169  
+      170    const handleClosePhotoModal = () => {
+      171      setViewPhotoPath(null);
+      172 +    onBusyChange(false);                                      
+      173    };
+      174  
+      175    // 标记为不合格
+
+  Thought for 14s, searched for 1 pattern (ctrl+o to expand)
+
+● Update(src\components\WeldMatrix.jsx)
+  ⎿  Added 1 line
+      195        const data = await resp.json();
+      196        if (resp.ok && data.success) {
+      197          setViewPhotoPath(null);
+      198 +        onBusyChange(false);                                  
+      199          if (onRefresh) onRefresh();
+      200        } else {
+      201          alert(data.error || '操作失败');
+  Thought for 2s (ctrl+o to expand)
+
+● Update(src\components\WeldMatrix.jsx)
+  ⎿  Added 1 line
+      769                  <button
+      770                    onClick={() => {
+      771                      setViewPhotoPath(null);
+      772 +                    onBusyChange(false);                      
+      773                      const targetWeld = records.find(r => r.wel
+           d_no === viewPhotoInfo.weldNo);
+      774                      if (targetWeld) {
+      775                        handleUploadClick(viewPhotoInfo.pipeline
+           No, viewPhotoInfo.weldNo, viewPhotoInfo.typeKey, targetWeld.uu
+           id);
+
+  Thought for 25s, ran 1 shell command (ctrl+o to expand)
+
+● 构建通过。改动汇总：
+
+  src/app/admin/page.js
+
+  ┌─────────────────────────┬────────────────────────────────────────────────┐
+  │          改动           │                      说明                      │
+  ├─────────────────────────┼────────────────────────────────────────────────┤
+  │ useRef + useCallback    │ 新增 import                                    │
+  ├─────────────────────────┼────────────────────────────────────────────────┤
+  │ busyRef + setBusy       │ 全局忙碌标记 ref（不触发 re-render，仅供       │
+  │                         │ interval 读取）                                │
+  ├─────────────────────────┼────────────────────────────────────────────────┤
+  │ handleRefresh           │ 统一刷新函数：fetchStats + fetchPipelines +    │
+  │                         │ fetchRecords，不重置 filterWeld/filterStatus   │
+  ├─────────────────────────┼────────────────────────────────────────────────┤
+  │                         │ activeTab === 'dashboard' 且                   │
+  │ 60s 自动刷新 useEffect  │ selectedProjectUuid 存在时启动                 │
+  │                         │ interval，busyRef.current === true 时跳过      │
+  ├─────────────────────────┼────────────────────────────────────────────────┤
+  │ 🔄 刷新按钮             │ 焊口筛选栏最右侧，点击调用 handleRefresh       │
+  ├─────────────────────────┼────────────────────────────────────────────────┤
+  │ PipelineTree/WeldMatrix │ onRefresh 统一改为 handleRefresh，新增         │
+  │                         │ onBusyChange={setBusy} prop                    │
+  └─────────────────────────┴────────────────────────────────────────────────┘
+
+  src/components/PipelineTree.jsx
+
+  ┌────────────────────────────────────────────────────┬─────────────────────┐
+  │                        改动                        │        说明         │
+  ├────────────────────────────────────────────────────┼─────────────────────┤
+  │ onBusyChange prop                                  │ 新增                │
+  ├────────────────────────────────────────────────────┼─────────────────────┤
+  │ handleStartEditPipeline                            │ onBusyChange(true)  │
+  ├────────────────────────────────────────────────────┼─────────────────────┤
+  │ handleSaveEditPipeline 成功 /                      │ onBusyChange(false) │
+  │ handleCancelEditPipeline                           │                     │
+  └────────────────────────────────────────────────────┴─────────────────────┘
+
+  src/components/WeldMatrix.jsx
+
+  ┌───────────────────────────────┬─────────────────────────────────────────┐
+  │             改动              │                  说明                   │
+  ├───────────────────────────────┼─────────────────────────────────────────┤
+  │ onBusyChange prop             │ 新增                                    │
+  ├───────────────────────────────┼─────────────────────────────────────────┤
+  │ handleStartEditWeld           │ onBusyChange(true)                      │
+  ├───────────────────────────────┼─────────────────────────────────────────┤
+  │ handleSaveEditWeld 成功 /     │ onBusyChange(false)                     │
+  │ handleCancelEditWeld          │                                         │
+  ├───────────────────────────────┼─────────────────────────────────────────┤
+  │ handleFileChange              │ 入口 onBusyChange(true)，成功/失败时    │
+  │                               │ onBusyChange(false)                     │
+  ├───────────────────────────────┼─────────────────────────────────────────┤
+  │ handleOpenPhotoModal          │ onBusyChange(true)                      │
+  ├───────────────────────────────┼─────────────────────────────────────────┤
+  │ handleClosePhotoModal         │ onBusyChange(false)                     │
+  ├───────────────────────────────┼─────────────────────────────────────────┤
+  │ 驳回成功 / 重传覆盖按钮       │ onBusyChange(false)                     │
+  └───────────────────────────────┴─────────────────────────────────────────┘
+
+  自动刷新行为总结
+
+  ┌──────────────────┬──────────────────────────────────────────┐
+  │       场景       │                 自动刷新                 │
+  ├──────────────────┼──────────────────────────────────────────┤
+  │ 页面空闲 60s     │ ✅ 执行                                  │
+  ├──────────────────┼──────────────────────────────────────────┤
+  │ 正在编辑管线号   │ ❌ 跳过                                  │
+  ├──────────────────┼──────────────────────────────────────────┤
+  │ 正在编辑焊口号   │ ❌ 跳过                                  │
+  ├──────────────────┼──────────────────────────────────────────┤
+  │ 正在上传照片     │ ❌ 跳过                                  │
+  ├──────────────────┼──────────────────────────────────────────┤
+  │ 正在查看大图     │ ❌ 跳过                                  │
+  ├──────────────────┼──────────────────────────────────────────┤
+  │ 完成 CRUD 操作后 │ ✅ 立即刷新一次（由 onRefresh 回调触发） │
+  └──────────────────┴──────────────────────────────────────────┘
+
+  清 .next 后 pnpm dev 重启测试。
+
+✻ Churned for 8m 24s
