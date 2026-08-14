@@ -16,8 +16,7 @@ const db = require('../../../../../lib/db');
 const { logger } = require('../../../../../lib/logger');
 const { logAudit } = require('../../../../../lib/audit');
 const { getOSSClient } = require('../../../../../lib/oss');
-
-const PHOTO_TYPE_CN = { zudui: '组对', dadi: '打底', gaimian: '盖面' };
+const photoTypes = require('../../../../../lib/photo-types');
 
 async function handler(request) {
   // 1. 校验管理员权限
@@ -36,14 +35,14 @@ async function handler(request) {
     return Response.json({ success: false, error: '缺少必需的字段' }, { status: 400 });
   }
 
-  if (!['zudui', 'dadi', 'gaimian'].includes(photo_type)) {
+  if (!photoTypes.isValidKey(photo_type)) {
     return Response.json({ success: false, error: '无效的工序类型' }, { status: 400 });
   }
 
   try {
     const record = db.db
       .prepare(`
-        SELECT wr.id, wr.photo_zudui, wr.photo_dadi, wr.photo_gaimian
+        SELECT wr.*
         FROM weld_records wr
         JOIN pipelines p ON wr.pipeline_id = p.id
         WHERE p.pipeline_no = ? AND wr.weld_no = ?
@@ -80,7 +79,7 @@ async function handler(request) {
       .run(record.id);
 
     // 4. 写入审计与系统日志
-    const typeCN = PHOTO_TYPE_CN[photo_type] || photo_type;
+    const typeCN = photoTypes.getLabel(photo_type);
     logger.info({ msg: 'photo.deleted_by_admin', pipeline_no, weld_no, photo_type, ossKey });
 
     logAudit(

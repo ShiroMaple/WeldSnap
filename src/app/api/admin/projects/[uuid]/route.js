@@ -28,7 +28,7 @@ async function putHandler(request, { params }) {
     return Response.json({ success: false, error: '请求体必须是 JSON' }, { status: 400 });
   }
 
-  const { construction_no, project_name, remark, pipeline_prefix, weld_prefix, status, completion_status, owner_unit, construction_unit } = body;
+  const { construction_no, project_name, remark, pipeline_prefix, weld_prefix, status, completion_status, owner_unit, construction_unit, processes } = body;
 
   const finalStatus = completion_status || status || '进行中';
 
@@ -51,7 +51,8 @@ async function putHandler(request, { params }) {
     weld_prefix,
     finalStatus,
     owner_unit || '',
-    construction_unit || ''
+    construction_unit || '',
+    processes
   );
 
   if (result.success) {

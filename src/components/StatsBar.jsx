@@ -9,8 +9,9 @@
 
 export default function StatsBar({ stats = { total: 0, completed: 0, pending: 0 } }) {
   const { total, completed, pending } = stats;
-  // 每个焊口有 3 道工序 (组对/打底/盖面)
-  const totalProcesses = total * 3;
+  // 每个焊口按项目启用工序数计算总工序数
+  const processCount = stats.processCount || 3;
+  const totalProcesses = total * processCount;
   const ratio = totalProcesses > 0 ? Math.round((completed / totalProcesses) * 100) : 0;
 
   return (

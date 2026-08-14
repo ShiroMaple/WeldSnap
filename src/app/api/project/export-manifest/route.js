@@ -13,12 +13,7 @@ const { requireAuth } = require('../../../../middleware/auth');
 const { getOSSClient } = require('../../../../lib/oss');
 const db = require('../../../../lib/db');
 const { logAudit } = require('../../../../lib/audit');
-
-const TYPE_NAME_MAP = {
-  zudui: '组对',
-  dadi: '打底',
-  gaimian: '盖面',
-};
+const photoTypes = require('../../../../lib/photo-types');
 
 async function handler(request) {
   requireAuth(request);
@@ -64,7 +59,7 @@ async function handler(request) {
       const checkAndAdd = (field, typeKey) => {
         const val = w[field];
         if (val && !val.startsWith('REJECTED:')) {
-          const typeName = TYPE_NAME_MAP[typeKey];
+          const typeName = photoTypes.getLabel(typeKey);
           const filename = `${pNo}-${wNo}-${typeName}.jpg`;
           
           // 生成限时一小时的 GET 签名预览/下载 URL
@@ -80,9 +75,9 @@ async function handler(request) {
         }
       };
 
-      checkAndAdd('photo_zudui', 'zudui');
-      checkAndAdd('photo_dadi', 'dadi');
-      checkAndAdd('photo_gaimian', 'gaimian');
+      for (const t of photoTypes.PHOTO_TYPES) {
+        checkAndAdd(`photo_${t.key}`, t.key);
+      }
     }
 
     logAudit(

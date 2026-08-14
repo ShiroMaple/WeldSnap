@@ -18,13 +18,8 @@
 import { useState, useEffect, useRef, useMemo, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { compressImage } from '@/lib/compress';
+import { PHOTO_TYPES, DEFAULT_PROCESS_KEYS } from '@/lib/photo-types';
 import QRScannerModal from '@/components/QRScannerModal';
-
-const PHOTO_TYPES = [
-  { id: 'zudui', name: '1. 组对工序', label: '组对' },
-  { id: 'dadi', name: '2. 打底工序', label: '打底' },
-  { id: 'gaimian', name: '3. 盖面工序', label: '盖面' },
-];
 
 function UploadContent() {
   const [currentUser, setCurrentUser] = useState(null);
@@ -73,10 +68,21 @@ function UploadContent() {
     return () => clearTimeout(timer);
   }, [newWeldName]);
 
-  // 选中焊口的照片上传状态
-  const [uploadedPhotos, setUploadedPhotos] = useState({ zudui: null, dadi: null, gaimian: null });
-  const [statusMsg, setStatusMsg] = useState({ zudui: '未上传', dadi: '未上传', gaimian: '未上传' });
-  const [isSubmitting, setIsSubmitting] = useState({ zudui: false, dadi: false, gaimian: false });
+  // 当前项目启用的工序 keys（进入管线时从 API 下发，默认 3 道）
+  const [processKeys, setProcessKeys] = useState(DEFAULT_PROCESS_KEYS);
+
+  // 当前项目启用的工序列表（含序号显示名，如 "1. 组对工序"）
+  const activePhotoTypes = useMemo(
+    () => PHOTO_TYPES
+      .filter(t => processKeys.includes(t.key))
+      .map((t, idx) => ({ ...t, name: `${idx + 1}. ${t.label}工序` })),
+    [processKeys]
+  );
+
+  // 选中焊口的照片上传状态（动态 key）
+  const [uploadedPhotos, setUploadedPhotos] = useState({});
+  const [statusMsg, setStatusMsg] = useState({});
+  const [isSubmitting, setIsSubmitting] = useState({});
 
   // ─── 预览大图状态 ───────────────────────────────────────────
   const [previewIndex, setPreviewIndex] = useState(-1); // -1 表示关闭
@@ -87,11 +93,11 @@ function UploadContent() {
     const activeWeldRecord = weldsList.find((w) => w.weld_no === selectedWeld);
     if (!activeWeldRecord) return items;
 
-    PHOTO_TYPES.forEach((type) => {
-      const path = activeWeldRecord[`photo_${type.id}`];
+    activePhotoTypes.forEach((type) => {
+      const path = activeWeldRecord[`photo_${type.key}`];
       if (path) {
         items.push({
-          typeId: type.id,
+          typeId: type.key,
           label: type.name, // 例如 "1. 组对工序"
           path: path,
           isRejected: path.startsWith('REJECTED:'),
@@ -99,7 +105,7 @@ function UploadContent() {
       }
     });
     return items;
-  }, [weldsList, selectedWeld]);
+  }, [weldsList, selectedWeld, activePhotoTypes]);
 
   const handleOpenPreview = (typeId) => {
     const idx = previewItems.findIndex((item) => item.typeId === typeId);
@@ -108,12 +114,8 @@ function UploadContent() {
     }
   };
 
-  // 文件 Input Refs
-  const fileInputRefs = {
-    zudui: useRef(null),
-    dadi: useRef(null),
-    gaimian: useRef(null),
-  };
+  // 文件 Input Refs（动态挂载）
+  const fileInputRefs = useRef({});
 
   // 图片压缩配置
   const [compressConfig, setCompressConfig] = useState({ enabled: true, maxWidth: 1920, maxHeight: 1080, quality: 0.8 });
@@ -270,8 +272,9 @@ function UploadContent() {
     setSelectedWeld('');
     setNewWeldName('');
     setWeldSearchTerm('');
-    setUploadedPhotos({ zudui: null, dadi: null, gaimian: null });
-    setStatusMsg({ zudui: '未上传', dadi: '未上传', gaimian: '未上传' });
+    setUploadedPhotos({});
+    setStatusMsg({});
+    setIsSubmitting({});
 
     try {
       const resp = await fetch(`/api/welds/by-pipeline/${encodeURIComponent(pipelineUuid)}`);
@@ -290,6 +293,21 @@ function UploadContent() {
           weldPrefix: data.weld_prefix || '',
         };
         setSelectedProject(projectObj);
+
+        // 按项目启用的工序初始化照片状态容器
+        const keys = data.process_keys || DEFAULT_PROCESS_KEYS;
+        setProcessKeys(keys);
+        const emptyPhotos = {};
+        const emptyMsg = {};
+        const emptySubmitting = {};
+        keys.forEach(k => {
+          emptyPhotos[k] = null;
+          emptyMsg[k] = '未上传';
+          emptySubmitting[k] = false;
+        });
+        setUploadedPhotos(emptyPhotos);
+        setStatusMsg(emptyMsg);
+        setIsSubmitting(emptySubmitting);
 
         // 如果用户从扫码或搜索调起，预先加载该项目的管线列表，以便返回/切换时正常呈现
         if (data.project_uuid) {
@@ -385,12 +403,16 @@ function UploadContent() {
         return { isDone: true, label: '已上传', path: path };
       };
 
-      const sZudui = getPhotoStatus(found.photo_zudui);
-      const sDadi = getPhotoStatus(found.photo_dadi);
-      const sGaimian = getPhotoStatus(found.photo_gaimian);
+      const nextPhotos = {};
+      const nextMsg = {};
+      processKeys.forEach((k) => {
+        const s = getPhotoStatus(found[`photo_${k}`]);
+        nextPhotos[k] = s.path;
+        nextMsg[k] = s.label;
+      });
 
-      setUploadedPhotos({ zudui: sZudui.path, dadi: sDadi.path, gaimian: sGaimian.path });
-      setStatusMsg({ zudui: sZudui.label, dadi: sDadi.label, gaimian: sGaimian.label });
+      setUploadedPhotos(nextPhotos);
+      setStatusMsg(nextMsg);
     }
 
     navigateToLevel(3);
@@ -400,16 +422,10 @@ function UploadContent() {
   const sortedWeldsList = useMemo(() => {
     return [...weldsList].sort((a, b) => {
       const getPriority = (w) => {
-        const isRejected =
-          (w.photo_zudui && w.photo_zudui.startsWith('REJECTED:')) ||
-          (w.photo_dadi && w.photo_dadi.startsWith('REJECTED:')) ||
-          (w.photo_gaimian && w.photo_gaimian.startsWith('REJECTED:'));
+        const isRejected = processKeys.some(k => w[`photo_${k}`] && w[`photo_${k}`].startsWith('REJECTED:'));
         if (isRejected) return 1;
 
-        const isDone =
-          w.photo_zudui && !w.photo_zudui.startsWith('REJECTED:') &&
-          w.photo_dadi && !w.photo_dadi.startsWith('REJECTED:') &&
-          w.photo_gaimian && !w.photo_gaimian.startsWith('REJECTED:');
+        const isDone = processKeys.every(k => w[`photo_${k}`] && !w[`photo_${k}`].startsWith('REJECTED:'));
         if (isDone) return 3;
 
         return 2;
@@ -421,7 +437,7 @@ function UploadContent() {
 
       return a.weld_no.localeCompare(b.weld_no, undefined, { numeric: true });
     });
-  }, [weldsList]);
+  }, [weldsList, processKeys]);
 
   // 根据当前模糊搜索条件过滤焊口列表
   const filteredWeldsList = useMemo(() => {
@@ -465,26 +481,24 @@ function UploadContent() {
 
   // 焊口 Badge 生成辅助函数
   const getWeldBadge = (w) => {
-    const isRejected =
-      (w.photo_zudui && w.photo_zudui.startsWith('REJECTED:')) ||
-      (w.photo_dadi && w.photo_dadi.startsWith('REJECTED:')) ||
-      (w.photo_gaimian && w.photo_gaimian.startsWith('REJECTED:'));
+    const totalSteps = processKeys.length;
+    const isRejected = processKeys.some(k => w[`photo_${k}`] && w[`photo_${k}`].startsWith('REJECTED:'));
 
     if (isRejected) {
       return { type: 'rejected', label: '⚠️ 不合格', bg: 'bg-[#da1e28]', text: 'text-white' };
     }
 
-    const completedCount =
-      (w.photo_zudui && !w.photo_zudui.startsWith('REJECTED:') ? 1 : 0) +
-      (w.photo_dadi && !w.photo_dadi.startsWith('REJECTED:') ? 1 : 0) +
-      (w.photo_gaimian && !w.photo_gaimian.startsWith('REJECTED:') ? 1 : 0);
+    const completedCount = processKeys.reduce(
+      (acc, k) => acc + (w[`photo_${k}`] && !w[`photo_${k}`].startsWith('REJECTED:') ? 1 : 0),
+      0
+    );
 
-    if (completedCount === 3) {
+    if (completedCount === totalSteps) {
       return { type: 'completed', label: '✓ 已拍摄', bg: 'bg-[#24a148]', text: 'text-white' };
     }
 
     if (completedCount > 0) {
-      return { type: 'progress', label: `进行中 (${completedCount}/3)`, bg: 'bg-[#edf5ff]', text: 'text-[#0f62fe] border border-[#0f62fe]' };
+      return { type: 'progress', label: `进行中 (${completedCount}/${totalSteps})`, bg: 'bg-[#edf5ff]', text: 'text-[#0f62fe] border border-[#0f62fe]' };
     }
 
     return { type: 'pending', label: '待拍摄', bg: 'bg-[#f4f4f4]', text: 'text-[#525252] border border-[#c6c6c6]' };
@@ -492,7 +506,7 @@ function UploadContent() {
 
   // 拍照与云直传 OSS
   const triggerCapture = (type) => {
-    fileInputRefs[type].current.click();
+    if (fileInputRefs.current[type]) fileInputRefs.current[type].click();
   };
 
   const handleCaptureAndUpload = async (type, e) => {
@@ -949,13 +963,14 @@ function UploadContent() {
                         </span>
                       </div>
 
-                      {/* 三工序工况微缩标识 */}
+                      {/* 工序工况微缩标识 */}
                       <div className="flex items-center space-x-1 text-[11px] text-[#8d8d8d]">
-                        <span className={w.photo_zudui && !w.photo_zudui.startsWith('REJECTED:') ? 'text-[#24a148] font-bold' : w.photo_zudui && w.photo_zudui.startsWith('REJECTED:') ? 'text-[#da1e28] font-bold' : ''}>组对</span>
-                        <span>/</span>
-                        <span className={w.photo_dadi && !w.photo_dadi.startsWith('REJECTED:') ? 'text-[#24a148] font-bold' : w.photo_dadi && w.photo_dadi.startsWith('REJECTED:') ? 'text-[#da1e28] font-bold' : ''}>打底</span>
-                        <span>/</span>
-                        <span className={w.photo_gaimian && !w.photo_gaimian.startsWith('REJECTED:') ? 'text-[#24a148] font-bold' : w.photo_gaimian && w.photo_gaimian.startsWith('REJECTED:') ? 'text-[#da1e28] font-bold' : ''}>盖面</span>
+                        {activePhotoTypes.map((t, idx) => (
+                          <span key={t.key} className="flex items-center space-x-1">
+                            {idx > 0 && <span>/</span>}
+                            <span className={w[`photo_${t.key}`] && !w[`photo_${t.key}`].startsWith('REJECTED:') ? 'text-[#24a148] font-bold' : w[`photo_${t.key}`] && w[`photo_${t.key}`].startsWith('REJECTED:') ? 'text-[#da1e28] font-bold' : ''}>{t.label}</span>
+                          </span>
+                        ))}
                         <span className="ml-2 text-[#0f62fe] font-medium">➔</span>
                       </div>
                     </div>
@@ -974,21 +989,21 @@ function UploadContent() {
               <span className="text-[16px] font-bold text-[#161616]">{selectedPipeline} - {selectedWeld}</span>
             </div>
 
-            {/* 三工序三列卡片列表 */}
+            {/* 工序三列卡片列表 */}
             <div className="space-y-3">
-              {PHOTO_TYPES.map((type) => {
-                const path = uploadedPhotos[type.id];
-                const msg = statusMsg[type.id];
-                const loadingState = isSubmitting[type.id];
+              {activePhotoTypes.map((type) => {
+                const path = uploadedPhotos[type.key];
+                const msg = statusMsg[type.key];
+                const loadingState = isSubmitting[type.key];
                 const isDone = !!path;
 
                 const activeWeldRecord = weldsList.find((w) => w.weld_no === selectedWeld);
-                const rawPath = activeWeldRecord ? activeWeldRecord[`photo_${type.id}`] : null;
+                const rawPath = activeWeldRecord ? activeWeldRecord[`photo_${type.key}`] : null;
                 const isRejected = rawPath && rawPath.startsWith('REJECTED:');
 
                 return (
                   <div
-                    key={type.id}
+                    key={type.key}
                     className={`border p-3.5 bg-white rounded-none grid grid-cols-12 items-center gap-2 transition-colors duration-150
                       ${isDone ? 'border-[#24a148]' : isRejected ? 'border-[#da1e28]' : 'border-[#e0e0e0]'}
                     `}
@@ -1016,7 +1031,7 @@ function UploadContent() {
                     <div className="col-span-4 flex items-center justify-center">
                       {isDone ? (
                         <div
-                          onClick={() => handleOpenPreview(type.id)}
+                          onClick={() => handleOpenPreview(type.key)}
                           className="w-24 h-20 bg-[#f4f4f4] border border-[#e0e0e0] flex items-center justify-center overflow-hidden cursor-pointer hover:opacity-85 active:opacity-75 transition-opacity"
                         >
                           <img
@@ -1027,7 +1042,7 @@ function UploadContent() {
                         </div>
                       ) : isRejected ? (
                         <div
-                          onClick={() => handleOpenPreview(type.id)}
+                          onClick={() => handleOpenPreview(type.key)}
                           className="w-24 h-20 bg-[#f4f4f4] border border-[#da1e28] flex flex-col items-center justify-center overflow-hidden relative cursor-pointer hover:opacity-85 active:opacity-75 transition-opacity"
                         >
                           <img
@@ -1048,16 +1063,16 @@ function UploadContent() {
                     <div className="col-span-4 flex justify-end">
                       <input
                         type="file"
-                        ref={fileInputRefs[type.id]}
+                        ref={(el) => { fileInputRefs.current[type.key] = el; }}
                         accept="image/*"
                         capture="environment"
-                        onChange={(e) => handleCaptureAndUpload(type.id, e)}
+                        onChange={(e) => handleCaptureAndUpload(type.key, e)}
                         className="hidden"
                       />
 
                       <button
                         type="button"
-                        onClick={() => triggerCapture(type.id)}
+                        onClick={() => triggerCapture(type.key)}
                         disabled={loadingState}
                         className={`h-12 px-3 text-[14px] font-semibold cursor-pointer rounded-none outline-none border transition-colors duration-150 flex items-center justify-center whitespace-nowrap w-full max-w-[110px]
                           ${isDone

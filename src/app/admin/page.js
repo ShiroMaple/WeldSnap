@@ -18,6 +18,7 @@ import PipelineTree from '@/components/PipelineTree';
 import WeldMatrix from '@/components/WeldMatrix';
 import LogViewer from '@/components/LogViewer';
 import { addLogoToQRCode } from '@/lib/qrLogo';
+import { PHOTO_TYPES, DEFAULT_PROCESS_KEYS } from '@/lib/photo-types';
 
 function formatDatetimeLocal(date) {
   const pad = (n) => String(n).padStart(2, '0');
@@ -55,6 +56,7 @@ export default function AdminPage() {
   const [newRemark, setNewRemark] = useState('');
   const [newPipelinePrefix, setNewPipelinePrefix] = useState('');
   const [newWeldPrefix, setNewWeldPrefix] = useState('');
+  const [newProcesses, setNewProcesses] = useState([...DEFAULT_PROCESS_KEYS]);
 
   const [showEditProjectModal, setShowEditProjectModal] = useState(false);
   const [editProjectUuid, setEditProjectUuid] = useState('');
@@ -66,6 +68,10 @@ export default function AdminPage() {
   const [editRemark, setEditRemark] = useState('');
   const [editPipelinePrefix, setEditPipelinePrefix] = useState('');
   const [editWeldPrefix, setEditWeldPrefix] = useState('');
+  const [editProcesses, setEditProcesses] = useState([...DEFAULT_PROCESS_KEYS]);
+
+  // 建设单位 → 工序映射（用于项目表单自动匹配）
+  const [unitProcessMap, setUnitProcessMap] = useState({});
 
   // ─── 项目级详情状态 ─────────────────────────────────────
   const [stats, setStats] = useState({ total: 0, completed: 0, pending: 0 });
@@ -88,6 +94,30 @@ export default function AdminPage() {
   useEffect(() => {
     filtersRef.current = { filterWeld, filterStatus };
   }, [filterWeld, filterStatus]);
+
+  // 加载建设单位 → 工序映射（用于项目表单自动匹配）
+  useEffect(() => {
+    fetch('/api/admin/photo-types')
+      .then(r => r.json())
+      .then(d => { if (d.success) setUnitProcessMap(d.unit_process_map || {}); })
+      .catch(() => { });
+  }, []);
+
+  // 解析项目 processes（JSON 字符串或数组）→ keys 数组
+  const parseProcessKeys = (p) => {
+    if (!p || !p.processes) return DEFAULT_PROCESS_KEYS;
+    if (Array.isArray(p.processes)) return p.processes;
+    try {
+      const arr = JSON.parse(p.processes);
+      return Array.isArray(arr) ? arr : DEFAULT_PROCESS_KEYS;
+    } catch { return DEFAULT_PROCESS_KEYS; }
+  };
+
+  // 按建设单位自动匹配工序勾选
+  const applyUnitProcessMap = (unitName, setList) => {
+    const mapped = unitName ? unitProcessMap[unitName] : null;
+    if (mapped && mapped.length) setList([...mapped]);
+  };
 
   // 成员与设置数据
   const [users, setUsers] = useState([]);
@@ -371,6 +401,7 @@ export default function AdminPage() {
           remark: newRemark,
           pipeline_prefix: newPipelinePrefix,
           weld_prefix: newWeldPrefix,
+          processes: newProcesses,
         }),
       });
       const data = await resp.json();
@@ -384,6 +415,7 @@ export default function AdminPage() {
         setNewRemark('');
         setNewPipelinePrefix('');
         setNewWeldPrefix('');
+        setNewProcesses([...DEFAULT_PROCESS_KEYS]);
         fetchProjects();
       } else {
         alert(data.error || '添加失败');
@@ -404,6 +436,7 @@ export default function AdminPage() {
     setEditRemark(p.remark || '');
     setEditPipelinePrefix(p.pipeline_prefix || '');
     setEditWeldPrefix(p.weld_prefix || '');
+    setEditProcesses(parseProcessKeys(p));
     setShowEditProjectModal(true);
   };
 
@@ -427,6 +460,7 @@ export default function AdminPage() {
           remark: editRemark,
           pipeline_prefix: editPipelinePrefix,
           weld_prefix: editWeldPrefix,
+          processes: editProcesses,
         }),
       });
       const data = await resp.json();
@@ -1162,6 +1196,7 @@ export default function AdminPage() {
                       currentUser={currentUser}
                       pipelineUuid={selectedPipelineUuid}
                       projectInfo={selectedProject}
+                      processKeys={parseProcessKeys(selectedProject)}
                     />
                   </div>
 
@@ -1540,7 +1575,7 @@ export default function AdminPage() {
                   <input
                     type="text"
                     value={newOwnerUnit}
-                    onChange={(e) => setNewOwnerUnit(e.target.value)}
+                    onChange={(e) => { setNewOwnerUnit(e.target.value); applyUnitProcessMap(e.target.value, setNewProcesses); }}
                     placeholder="如: 中国石化分公司"
                     className="h-9 px-3 bg-[#f4f4f4] border-t-0 border-x-0 border-b-2 border-transparent focus:border-[#0f62fe] focus:bg-[#e8e8e8] text-[13px] outline-none rounded-none"
                   />
@@ -1567,6 +1602,23 @@ export default function AdminPage() {
                   <option value="进行中">进行中</option>
                   <option value="已完工">已完工</option>
                 </select>
+              </div>
+
+              <div className="flex flex-col">
+                <label className="text-[12px] text-[#525252] mb-1">启用的焊口工序（按建设单位自动匹配，可手动调整）</label>
+                <div className="flex flex-wrap gap-3">
+                  {PHOTO_TYPES.map(t => (
+                    <label key={t.key} className="flex items-center gap-1.5 text-[13px] text-[#161616] cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={newProcesses.includes(t.key)}
+                        onChange={() => setNewProcesses(prev => prev.includes(t.key) ? prev.filter(k => k !== t.key) : [...prev, t.key])}
+                        className="accent-[#0f62fe] cursor-pointer"
+                      />
+                      {t.label}
+                    </label>
+                  ))}
+                </div>
               </div>
 
               <div className="flex flex-col">
@@ -1658,7 +1710,7 @@ export default function AdminPage() {
                   <input
                     type="text"
                     value={editOwnerUnit}
-                    onChange={(e) => setEditOwnerUnit(e.target.value)}
+                    onChange={(e) => { setEditOwnerUnit(e.target.value); applyUnitProcessMap(e.target.value, setEditProcesses); }}
                     className="h-9 px-3 bg-[#f4f4f4] border-t-0 border-x-0 border-b-2 border-transparent focus:border-[#0f62fe] focus:bg-[#e8e8e8] text-[13px] outline-none rounded-none"
                   />
                 </div>
@@ -1683,6 +1735,23 @@ export default function AdminPage() {
                   <option value="进行中">进行中</option>
                   <option value="已完工">已完工</option>
                 </select>
+              </div>
+
+              <div className="flex flex-col">
+                <label className="text-[12px] text-[#525252] mb-1">启用的焊口工序（按建设单位自动匹配，可手动调整）</label>
+                <div className="flex flex-wrap gap-3">
+                  {PHOTO_TYPES.map(t => (
+                    <label key={t.key} className="flex items-center gap-1.5 text-[13px] text-[#161616] cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={editProcesses.includes(t.key)}
+                        onChange={() => setEditProcesses(prev => prev.includes(t.key) ? prev.filter(k => k !== t.key) : [...prev, t.key])}
+                        className="accent-[#0f62fe] cursor-pointer"
+                      />
+                      {t.label}
+                    </label>
+                  ))}
+                </div>
               </div>
 
               <div className="flex flex-col">

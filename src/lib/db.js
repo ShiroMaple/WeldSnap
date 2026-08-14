@@ -13,6 +13,13 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('node:crypto');
 const { logger } = require('./logger');
+const photoTypes = require('./photo-types');
+
+// ─── 建设单位 → 工序映射默认值（未命中时回退默认 3 道） ─────
+const DEFAULT_UNIT_PROCESS_MAP = {
+  '中石化安庆石化': ['zudui', 'dadi', 'gaimian', 'neijie'],
+  '中石化镇海炼化': ['zudui', 'dadi', 'gaimian'],
+};
 
 // ─── 数据库初始化 ─────────────────────────────────────────
 const DB_PATH = path.join(process.cwd(), 'data', 'app.db');
@@ -53,6 +60,7 @@ function getDbInstance() {
               status            TEXT NOT NULL DEFAULT '进行中',
               pipeline_prefix   TEXT,
               weld_prefix       TEXT,
+              processes         TEXT NOT NULL DEFAULT '["zudui","dadi","gaimian"]',
               created_at        TEXT DEFAULT (datetime('now','localtime'))
             );
 
@@ -73,6 +81,7 @@ function getDbInstance() {
               photo_zudui     TEXT,
               photo_dadi      TEXT,
               photo_gaimian   TEXT,
+              photo_neijie    TEXT,
               uploaded_by     TEXT,
               uploaded_at     TEXT,
               create_source   TEXT NOT NULL DEFAULT '管理控制台创建',
@@ -125,6 +134,21 @@ function getDbInstance() {
           if (projectCols.includes('status')) {
             db.exec("UPDATE projects SET completion_status = status WHERE status IS NOT NULL AND status != ''");
           }
+        }
+        if (!projectCols.includes('processes')) {
+          db.exec("ALTER TABLE projects ADD COLUMN processes TEXT NOT NULL DEFAULT '[\"zudui\",\"dadi\",\"gaimian\"]'");
+        }
+
+        const weldCols = db.prepare("PRAGMA table_info('weld_records')").all().map(c => c.name);
+        if (!weldCols.includes('photo_neijie')) {
+          db.exec("ALTER TABLE weld_records ADD COLUMN photo_neijie TEXT");
+        }
+
+        // 建设单位 → 工序映射预置（仅当不存在时）
+        const unitMapExists = db.prepare("SELECT key FROM system_settings WHERE key = 'unit_process_map'").get();
+        if (!unitMapExists) {
+          db.prepare("INSERT INTO system_settings (key, value) VALUES ('unit_process_map', ?)")
+            .run(JSON.stringify(DEFAULT_UNIT_PROCESS_MAP));
         }
 
         break; // 成功执行，跳出循环
@@ -261,7 +285,7 @@ function updateUser(id, username, password, role, displayName) {
 
 // ─── 项目 (Projects) 业务操作 ─────────────────────────────
 function listProjects() {
-  return db.prepare(`
+  const projects = db.prepare(`
     SELECT 
       p.*,
       (SELECT COUNT(*) FROM pipelines WHERE project_id = p.id) as pipeline_count,
@@ -270,39 +294,49 @@ function listProjects() {
         FROM weld_records w 
         JOIN pipelines pl ON w.pipeline_id = pl.id 
         WHERE pl.project_id = p.id
-      ) as weld_count,
-      (
-        SELECT CASE 
-          WHEN COUNT(w.id) = 0 THEN 0
-          ELSE ROUND(
-            (
-              SUM(CASE WHEN w.photo_zudui IS NOT NULL AND w.photo_zudui NOT LIKE 'REJECTED:%' THEN 1 ELSE 0 END) +
-              SUM(CASE WHEN w.photo_dadi IS NOT NULL AND w.photo_dadi NOT LIKE 'REJECTED:%' THEN 1 ELSE 0 END) +
-              SUM(CASE WHEN w.photo_gaimian IS NOT NULL AND w.photo_gaimian NOT LIKE 'REJECTED:%' THEN 1 ELSE 0 END)
-            ) * 100.0 / (COUNT(w.id) * 3.0), 
-            0
-          )
-        END
-        FROM weld_records w
-        JOIN pipelines pl ON w.pipeline_id = pl.id
-        WHERE pl.project_id = p.id
-      ) as quality_progress
+      ) as weld_count
     FROM projects p
     ORDER BY p.created_at DESC
   `).all();
+
+  // 各项目每道工序的有效照片数（按启用工序动态计算进度）
+  const sumExprs = photoTypes.PHOTO_TYPES.map(t =>
+    `SUM(CASE WHEN w.photo_${t.key} IS NOT NULL AND w.photo_${t.key} NOT LIKE 'REJECTED:%' THEN 1 ELSE 0 END) as d_${t.key}`
+  ).join(', ');
+  const stats = db.prepare(`
+    SELECT pl.project_id, ${sumExprs}
+    FROM weld_records w
+    JOIN pipelines pl ON w.pipeline_id = pl.id
+    GROUP BY pl.project_id
+  `).all();
+  const statsMap = new Map(stats.map(s => [s.project_id, s]));
+
+  return projects.map(p => {
+    const keys = photoTypes.parseProcessKeys(p.processes);
+    const s = statsMap.get(p.id);
+    let done = 0;
+    if (s) {
+      for (const k of keys) done += (s[`d_${k}`] || 0);
+    }
+    p.quality_progress = p.weld_count > 0 ? Math.round(done * 100 / (p.weld_count * keys.length)) : 0;
+    return p;
+  });
 }
 
 function getProjectByUuid(uuid) {
   return db.prepare('SELECT * FROM projects WHERE uuid = ?').get(uuid) || null;
 }
 
-function createProject(constructionNo, projectName, remark, pipelinePrefix, weldPrefix, ownerUnit, constructionUnit, completionStatus) {
+function createProject(constructionNo, projectName, remark, pipelinePrefix, weldPrefix, ownerUnit, constructionUnit, completionStatus, processes) {
   try {
     const uuid = crypto.randomUUID();
     const statusVal = completionStatus ? completionStatus.trim() : '进行中';
+    const processesVal = Array.isArray(processes)
+      ? JSON.stringify(photoTypes.orderKeys(processes))
+      : (processes || JSON.stringify(photoTypes.DEFAULT_PROCESS_KEYS));
     db.prepare(`
-      INSERT INTO projects (uuid, construction_no, project_name, remark, pipeline_prefix, weld_prefix, owner_unit, construction_unit, completion_status, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO projects (uuid, construction_no, project_name, remark, pipeline_prefix, weld_prefix, owner_unit, construction_unit, completion_status, status, processes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       uuid,
       constructionNo.trim(),
@@ -313,7 +347,8 @@ function createProject(constructionNo, projectName, remark, pipelinePrefix, weld
       ownerUnit || null,
       constructionUnit || null,
       statusVal,
-      statusVal
+      statusVal,
+      processesVal
     );
 
     logger.info({ msg: 'db.project_created', uuid, constructionNo });
@@ -324,12 +359,15 @@ function createProject(constructionNo, projectName, remark, pipelinePrefix, weld
   }
 }
 
-function updateProject(uuid, constructionNo, projectName, remark, pipelinePrefix, weldPrefix, completionStatus, ownerUnit, constructionUnit) {
+function updateProject(uuid, constructionNo, projectName, remark, pipelinePrefix, weldPrefix, completionStatus, ownerUnit, constructionUnit, processes) {
   try {
     const statusVal = completionStatus ? completionStatus.trim() : '进行中';
+    const processesVal = Array.isArray(processes)
+      ? JSON.stringify(photoTypes.orderKeys(processes))
+      : (processes || JSON.stringify(photoTypes.DEFAULT_PROCESS_KEYS));
     db.prepare(`
       UPDATE projects 
-      SET construction_no = ?, project_name = ?, remark = ?, pipeline_prefix = ?, weld_prefix = ?, completion_status = ?, status = ?, owner_unit = ?, construction_unit = ?
+      SET construction_no = ?, project_name = ?, remark = ?, pipeline_prefix = ?, weld_prefix = ?, completion_status = ?, status = ?, owner_unit = ?, construction_unit = ?, processes = ?
       WHERE uuid = ?
     `).run(
       constructionNo.trim(),
@@ -341,6 +379,7 @@ function updateProject(uuid, constructionNo, projectName, remark, pipelinePrefix
       statusVal,
       ownerUnit || null,
       constructionUnit || null,
+      processesVal,
       uuid
     );
     return { success: true };
@@ -361,6 +400,12 @@ function deleteProject(uuid) {
 
 // ─── 管线 (Pipelines) 业务操作 ────────────────────────────
 function listPipelines(projectUuid) {
+  const project = getProjectByUuid(projectUuid);
+  const keys = project ? photoTypes.parseProcessKeys(project.processes) : photoTypes.DEFAULT_PROCESS_KEYS;
+  const completedCond = keys.map(k =>
+    `photo_${k} IS NOT NULL AND photo_${k} NOT LIKE 'REJECTED:%'`
+  ).join(' AND ');
+
   return db.prepare(`
     SELECT
       pl.*,
@@ -372,9 +417,7 @@ function listPipelines(projectUuid) {
         SELECT COUNT(*)
         FROM weld_records
         WHERE pipeline_id = pl.id
-          AND photo_zudui IS NOT NULL AND photo_zudui NOT LIKE 'REJECTED:%'
-          AND photo_dadi IS NOT NULL AND photo_dadi NOT LIKE 'REJECTED:%'
-          AND photo_gaimian IS NOT NULL AND photo_gaimian NOT LIKE 'REJECTED:%'
+          AND ${completedCond}
       ) as completed
     FROM pipelines pl
     JOIN projects pr ON pl.project_id = pr.id
@@ -586,7 +629,7 @@ function deleteWeld(uuid) {
 }
 
 function updatePhotoPath(id, field, fileName, uploadedBy) {
-  const allowedFields = ['photo_zudui', 'photo_dadi', 'photo_gaimian'];
+  const allowedFields = photoTypes.PHOTO_TYPES.map(t => `photo_${t.key}`);
   if (!allowedFields.includes(field)) {
     throw new Error('Invalid field: ' + field);
   }
@@ -601,6 +644,8 @@ function getStats(projectUuid) {
   const project = getProjectByUuid(projectUuid);
   if (!project) return { total: 0, completed: 0, pending: 0 };
 
+  const keys = photoTypes.parseProcessKeys(project.processes);
+
   const total = db.prepare(`
     SELECT COUNT(*) as v 
     FROM weld_records w
@@ -608,20 +653,20 @@ function getStats(projectUuid) {
     WHERE p.project_id = ?
   `).get(project.id).v;
 
+  const sumExprs = keys.map(k =>
+    `SUM(CASE WHEN w.photo_${k} IS NOT NULL AND w.photo_${k} NOT LIKE 'REJECTED:%' THEN 1 ELSE 0 END)`
+  ).join(' + ');
+
   const completed = db.prepare(`
-    SELECT (
-      SUM(CASE WHEN w.photo_zudui IS NOT NULL AND w.photo_zudui NOT LIKE 'REJECTED:%' THEN 1 ELSE 0 END) +
-      SUM(CASE WHEN w.photo_dadi IS NOT NULL AND w.photo_dadi NOT LIKE 'REJECTED:%' THEN 1 ELSE 0 END) +
-      SUM(CASE WHEN w.photo_gaimian IS NOT NULL AND w.photo_gaimian NOT LIKE 'REJECTED:%' THEN 1 ELSE 0 END)
-    ) as v
+    SELECT (${sumExprs}) as v
     FROM weld_records w
     JOIN pipelines p ON w.pipeline_id = p.id
     WHERE p.project_id = ?
   `).get(project.id).v || 0;
 
-  const totalProcesses = total * 3;
+  const totalProcesses = total * keys.length;
   const pending = totalProcesses - completed;
-  return { total, completed, pending };
+  return { total, completed, pending, processCount: keys.length };
 }
 
 // ─── 批量删除支持与“熔断检查” ──────────────────────────────
@@ -635,15 +680,16 @@ function bulkDelete(uuids, type, isSystemAdmin) {
     let hasPhotoCount = 0;
 
     if (type === 'weld') {
+      const photoCols = photoTypes.PHOTO_TYPES.map(t => `photo_${t.key}`).join(', ');
       const stmtCheck = db.prepare(`
-        SELECT photo_zudui, photo_dadi, photo_gaimian 
+        SELECT ${photoCols} 
         FROM weld_records WHERE uuid = ?
       `);
       for (const uuid of uuids) {
         const r = stmtCheck.get(uuid);
         if (r) {
           checkedCount++;
-          if (r.photo_zudui || r.photo_dadi || r.photo_gaimian) {
+          if (photoTypes.PHOTO_TYPES.some(t => r[`photo_${t.key}`])) {
             hasPhotoCount++;
           }
         }
@@ -664,8 +710,9 @@ function bulkDelete(uuids, type, isSystemAdmin) {
       }
 
     } else if (type === 'pipeline') {
+      const photoCols = photoTypes.PHOTO_TYPES.map(t => `w.photo_${t.key}`).join(', ');
       const stmtCheck = db.prepare(`
-        SELECT w.photo_zudui, w.photo_dadi, w.photo_gaimian
+        SELECT ${photoCols}
         FROM weld_records w
         JOIN pipelines p ON w.pipeline_id = p.id
         WHERE p.uuid = ?
@@ -676,7 +723,7 @@ function bulkDelete(uuids, type, isSystemAdmin) {
         checkedCount++;
         let pHasPhoto = false;
         for (const r of rows) {
-          if (r.photo_zudui || r.photo_dadi || r.photo_gaimian) {
+          if (photoTypes.PHOTO_TYPES.some(t => r[`photo_${t.key}`])) {
             pHasPhoto = true;
             break;
           }
@@ -784,14 +831,14 @@ function getProjectExportRecords(projectUuid, pipelineUuids = []) {
   const project = getProjectByUuid(projectUuid);
   if (!project) return { project: null, records: [] };
 
+  const photoCols = photoTypes.PHOTO_TYPES.map(t => `w.photo_${t.key}`).join(',\n      ');
+
   let sql = `
     SELECT
       w.uuid as weld_uuid,
       w.weld_no,
       w.create_source,
-      w.photo_zudui,
-      w.photo_dadi,
-      w.photo_gaimian,
+      ${photoCols},
       w.uploaded_by,
       w.uploaded_at,
       p.uuid as pipeline_uuid,
@@ -869,6 +916,44 @@ function setSetting(key, value) {
   logger.info({ msg: 'db.setting_updated', key });
 }
 
+/** 读取「建设单位 → 工序」映射（JSON 对象），非法/缺失时回退默认 */
+function getUnitProcessMap() {
+  const raw = getSetting('unit_process_map');
+  if (!raw) return { ...DEFAULT_UNIT_PROCESS_MAP };
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object') return parsed;
+  } catch (e) {
+    // 非法 JSON，走默认
+  }
+  return { ...DEFAULT_UNIT_PROCESS_MAP };
+}
+
+/** 解析导入行中的「工序」输入为 JSON 字符串（支持 JSON 数组 / 逗号分隔的中文名或 key），否则按建设单位匹配 */
+function resolveProcesses(input, ownerUnit) {
+  if (input !== undefined && input !== null && String(input).trim() !== '') {
+    const raw = String(input).trim();
+    try {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) {
+        const keys = arr
+          .map(x => (photoTypes.isValidKey(x) ? x : photoTypes.getKeyByLabel(String(x))))
+          .filter(Boolean);
+        if (keys.length > 0) return JSON.stringify(photoTypes.orderKeys(keys));
+      }
+    } catch (e) {
+      // 非 JSON，按逗号/顿号分隔处理
+    }
+    const parts = raw.split(/[,，、]/).map(s => s.trim()).filter(Boolean);
+    const keys = parts
+      .map(s => (photoTypes.isValidKey(s) ? s : photoTypes.getKeyByLabel(s)))
+      .filter(Boolean);
+    if (keys.length > 0) return JSON.stringify(photoTypes.orderKeys(keys));
+  }
+  const mapped = getUnitProcessMap()[ownerUnit];
+  return JSON.stringify(mapped && mapped.length ? photoTypes.orderKeys(mapped) : photoTypes.DEFAULT_PROCESS_KEYS);
+}
+
 function importProjects(rows) {
   let inserted = 0;
   let skipped = 0;
@@ -879,8 +964,8 @@ function importProjects(rows) {
   try {
     const findProjectStmt = db.prepare('SELECT id FROM projects WHERE construction_no = ?');
     const insertProjectStmt = db.prepare(`
-      INSERT INTO projects (uuid, construction_no, project_name, remark, pipeline_prefix, weld_prefix, owner_unit, construction_unit, completion_status, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO projects (uuid, construction_no, project_name, remark, pipeline_prefix, weld_prefix, owner_unit, construction_unit, completion_status, status, processes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const seenConstructionNos = new Set();
@@ -895,6 +980,7 @@ function importProjects(rows) {
       const ownerUnit = String(r.owner_unit || '').trim();
       const constructionUnit = String(r.construction_unit || '').trim();
       const completionStatus = String(r.completion_status || '').trim() || '进行中';
+      const processesVal = resolveProcesses(r.processes, ownerUnit);
 
       if (!constructionNo || !projectName) {
         skipped++;
@@ -927,7 +1013,8 @@ function importProjects(rows) {
         ownerUnit || null,
         constructionUnit || null,
         completionStatus,
-        completionStatus
+        completionStatus,
+        processesVal
       );
       inserted++;
       insertedProjects.push({
@@ -1047,4 +1134,5 @@ module.exports = {
   getSetting,
   getAllSettings,
   setSetting,
+  getUnitProcessMap,
 };

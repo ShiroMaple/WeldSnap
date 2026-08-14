@@ -9,24 +9,21 @@
 const { getOSSClient } = require('../lib/oss');
 const { logger } = require('../lib/logger');
 const db = require('../lib/db');
+const photoTypes = require('../lib/photo-types');
 
 /**
- * 照片工序类型 → 中文名映射
+ * 照片工序类型 → 中文名映射（从工序单一真相源派生）
  */
-const PHOTO_TYPE_MAP = {
-  zudui: '组对',
-  dadi: '打底',
-  gaimian: '盖面',
-};
+const PHOTO_TYPE_MAP = Object.fromEntries(
+  photoTypes.PHOTO_TYPES.map(t => [t.key, t.label])
+);
 
 /**
- * 照片工序类型 → 数据库字段映射
+ * 照片工序类型 → 数据库字段映射（从工序单一真相源派生）
  */
-const FIELD_MAP = {
-  zudui: 'photo_zudui',
-  dadi: 'photo_dadi',
-  gaimian: 'photo_gaimian',
-};
+const FIELD_MAP = Object.fromEntries(
+  photoTypes.PHOTO_TYPES.map(t => [t.key, `photo_${t.key}`])
+);
 
 /**
  * 生成 OSS 预签名上传 URL (扁平化命名)

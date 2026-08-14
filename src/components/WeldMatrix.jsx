@@ -12,6 +12,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { compressImage } from '@/lib/compress';
+import { PHOTO_TYPES, DEFAULT_PROCESS_KEYS } from '@/lib/photo-types';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 
@@ -25,9 +26,15 @@ export default function WeldMatrix({
   currentUser = {},
   pipelineUuid = '',
   projectInfo = { pipeline_prefix: '', weld_prefix: '', construction_no: '', project_name: '' },
+  processKeys = [],
 }) {
   const [hoveredPhoto, setHoveredPhoto] = useState(null);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+
+  // 当前项目启用的工序列表（用于动态渲染表头与单元格）
+  const activeTypes = PHOTO_TYPES.filter(t =>
+    (processKeys.length ? processKeys : DEFAULT_PROCESS_KEYS).includes(t.key)
+  );
 
   // ─── 多选状态 ──────────────────────────────────────────
   const [selectedUuids, setSelectedUuids] = useState([]);
@@ -661,9 +668,9 @@ export default function WeldMatrix({
                       </span>
                     </div>
                   </th>
-                  <th className="pb-3 px-4 font-medium">组对工序</th>
-                  <th className="pb-3 px-4 font-medium">打底工序</th>
-                  <th className="pb-3 px-4 font-medium">盖面工序</th>
+                  {activeTypes.map(t => (
+                    <th key={t.key} className="pb-3 px-4 font-medium">{t.label}工序</th>
+                  ))}
                   <th className="pb-3 px-4 font-medium">最近上传人</th>
                   <th
                     id="weld-upload-time-header"
@@ -775,15 +782,11 @@ export default function WeldMatrix({
                           </>
                         )}
                       </td>
-                      <td className="py-3.5 px-4">
-                        {cellRender('photo_zudui', 'zudui', '组对工序')}
-                      </td>
-                      <td className="py-3.5 px-4">
-                        {cellRender('photo_dadi', 'dadi', '打底工序')}
-                      </td>
-                      <td className="py-3.5 px-4">
-                        {cellRender('photo_gaimian', 'gaimian', '盖面工序')}
-                      </td>
+                      {activeTypes.map(t => (
+                        <td key={t.key} className="py-3.5 px-4">
+                          {cellRender(`photo_${t.key}`, t.key, `${t.label}工序`)}
+                        </td>
+                      ))}
                       <td className="py-3.5 px-4 text-[#525252]">{r.uploaded_by || '-'}</td>
                       <td className="py-3.5 pl-4 text-[#525252]">{r.uploaded_at || '-'}</td>
                     </tr>

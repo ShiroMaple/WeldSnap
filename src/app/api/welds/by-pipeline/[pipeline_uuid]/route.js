@@ -7,6 +7,7 @@ export const dynamic = 'force-dynamic';
 const { withTrace } = require('../../../../../middleware/withTrace');
 const { requireAuth } = require('../../../../../middleware/auth');
 const db = require('../../../../../lib/db');
+const photoTypes = require('../../../../../lib/photo-types');
 
 async function handler(request, { params }) {
   // 普通施工人员或管理员均可访问，需已登录
@@ -24,7 +25,7 @@ async function handler(request, { params }) {
     return Response.json({ success: false, error: '找不到该管线记录' }, { status: 404 });
   }
 
-  const project = db.db.prepare('SELECT uuid, project_name, construction_no, weld_prefix FROM projects WHERE id = ?').get(pipeline.project_id);
+  const project = db.db.prepare('SELECT uuid, project_name, construction_no, weld_prefix, processes FROM projects WHERE id = ?').get(pipeline.project_id);
   const welds = db.listWelds(pipelineUuid);
 
   return Response.json({
@@ -34,6 +35,7 @@ async function handler(request, { params }) {
     project_name: project ? project.project_name : '',
     construction_no: project ? project.construction_no : '',
     weld_prefix: project ? project.weld_prefix : '',
+    process_keys: project ? photoTypes.parseProcessKeys(project.processes) : null,
     welds,
   });
 }

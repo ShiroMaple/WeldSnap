@@ -20,6 +20,7 @@ const PROJECT_COLUMNS = {
   remark: ['项目备注', 'remark'],
   pipeline_prefix: ['管线号前缀', 'pipeline_prefix'],
   weld_prefix: ['焊口号前缀', 'weld_prefix'],
+  processes: ['工序', 'processes'],
 };
 
 async function handler(request) {
@@ -83,6 +84,7 @@ async function handler(request) {
     remark: colMap.remark ? String(r[colMap.remark]).trim() : '',
     pipeline_prefix: colMap.pipeline_prefix ? String(r[colMap.pipeline_prefix]).trim() : '',
     weld_prefix: colMap.weld_prefix ? String(r[colMap.weld_prefix]).trim() : '',
+    processes: colMap.processes ? String(r[colMap.processes]).trim() : '',
   }));
 
   const result = db.importProjects(records);

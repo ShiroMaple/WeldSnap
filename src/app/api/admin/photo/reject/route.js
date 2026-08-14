@@ -12,8 +12,7 @@ const { requireAdmin } = require('../../../../../middleware/auth');
 const db = require('../../../../../lib/db');
 const { logger } = require('../../../../../lib/logger');
 const { logAudit } = require('../../../../../lib/audit');
-
-const PHOTO_TYPE_CN = { zudui: '组对', dadi: '打底', gaimian: '盖面' };
+const photoTypes = require('../../../../../lib/photo-types');
 
 async function handler(request) {
   // 校验管理员身份
@@ -32,14 +31,14 @@ async function handler(request) {
     return Response.json({ success: false, error: '缺少必需的字段' }, { status: 400 });
   }
 
-  if (!['zudui', 'dadi', 'gaimian'].includes(photo_type)) {
+  if (!photoTypes.isValidKey(photo_type)) {
     return Response.json({ success: false, error: '无效的工序类型' }, { status: 400 });
   }
 
   try {
     const record = db.db
       .prepare(`
-        SELECT wr.id, wr.photo_zudui, wr.photo_dadi, wr.photo_gaimian
+        SELECT wr.*
         FROM weld_records wr
         JOIN pipelines p ON wr.pipeline_id = p.id
         WHERE p.pipeline_no = ? AND wr.weld_no = ?
@@ -69,7 +68,7 @@ async function handler(request) {
 
     logger.info({ msg: 'photo.rejected_by_admin', pipeline_no, weld_no, photo_type });
 
-    const typeCN = PHOTO_TYPE_CN[photo_type] || photo_type;
+    const typeCN = photoTypes.getLabel(photo_type);
     logAudit(
       'REJECT_PHOTO',
       `将管线 [${pipeline_no}] / 焊口 [${weld_no}] 的 [${typeCN}] 工序照片标记为不合格`,

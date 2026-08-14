@@ -17,6 +17,7 @@ const db = require('../../../../../../lib/db');
 const { getOSSClient } = require('../../../../../../lib/oss');
 const { logAudit } = require('../../../../../../lib/audit');
 const logger = require('../../../../../../lib/logger');
+const photoTypes = require('../../../../../../lib/photo-types');
 
 let sharp = null;
 try {
@@ -121,6 +122,16 @@ async function handler(request, { params }) {
     return Response.json({ success: false, error: '项目不存在' }, { status: 404 });
   }
 
+  // 项目启用工序与照片列（第 4 道及以后的照片列动态追加在「盖面照片」之后）
+  const processKeys = photoTypes.parseProcessKeys(project.processes);
+  const photoCols = processKeys.map(k => `${photoTypes.getLabel(k)}照片`);
+  const headers = [...DEMO_HEADERS];
+  const extraPhotoCols = photoCols.filter(c => !DEMO_HEADERS.includes(c));
+  if (extraPhotoCols.length > 0) {
+    const idx = headers.indexOf('盖面照片');
+    if (idx !== -1) headers.splice(idx + 1, 0, ...extraPhotoCols);
+  }
+
   // 1. 读取系统配置中的 Excel 导出压缩参数
   const allSettings = db.getAllSettings();
   const compressConfig = {
@@ -133,17 +144,14 @@ async function handler(request, { params }) {
   // 2. 收集全量待拉取的 OSS 照片任务
   const photoTasks = [];
   records.forEach((r, recordIndex) => {
-    [
-      { key: r.photo_zudui, type: 'zudui', colName: '组对照片' },
-      { key: r.photo_dadi, type: 'dadi', colName: '打底照片' },
-      { key: r.photo_gaimian, type: 'gaimian', colName: '盖面照片' },
-    ].forEach((p) => {
-      if (p.key) {
+    processKeys.forEach((k) => {
+      const photoKey = r[`photo_${k}`];
+      if (photoKey) {
         photoTasks.push({
           recordIndex,
-          photoKey: p.key,
-          type: p.type,
-          colName: p.colName,
+          photoKey,
+          type: k,
+          colName: `${photoTypes.getLabel(k)}照片`,
         });
       }
     });
@@ -173,7 +181,7 @@ async function handler(request, { params }) {
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet('Sheet1');
 
-      const headerRow = worksheet.addRow(DEMO_HEADERS);
+      const headerRow = worksheet.addRow(headers);
       headerRow.height = 28;
 
       const colMap = {};
@@ -226,11 +234,8 @@ async function handler(request, { params }) {
         const row = worksheet.getRow(currentRowIndex);
         row.height = 65;
 
-        const hasAnyPhoto = !!(r.photo_zudui || r.photo_dadi || r.photo_gaimian);
-        const hasRejected =
-          (r.photo_zudui && r.photo_zudui.startsWith('REJECTED:')) ||
-          (r.photo_dadi && r.photo_dadi.startsWith('REJECTED:')) ||
-          (r.photo_gaimian && r.photo_gaimian.startsWith('REJECTED:'));
+        const hasAnyPhoto = processKeys.some(k => !!r[`photo_${k}`]);
+        const hasRejected = processKeys.some(k => r[`photo_${k}`] && r[`photo_${k}`].startsWith('REJECTED:'));
 
         let checkResult = '';
         if (hasAnyPhoto) {
@@ -255,8 +260,8 @@ async function handler(request, { params }) {
           };
         });
 
-        // 插入 3 工序单元格图片
-        ['组对照片', '打底照片', '盖面照片'].forEach((colName) => {
+        // 插入工序单元格图片
+        photoCols.forEach((colName) => {
           const colNum = colMap[colName];
           const imgBuffer = photoMap.get(`${i}_${colName}`);
           if (colNum && imgBuffer) {
@@ -295,9 +300,9 @@ async function handler(request, { params }) {
       }
 
       // 设置列宽
-      DEMO_HEADERS.forEach((h, index) => {
+      headers.forEach((h, index) => {
         const col = worksheet.getColumn(index + 1);
-        if (['组对照片', '打底照片', '盖面照片'].includes(h)) {
+        if (photoCols.includes(h)) {
           col.width = 18;
         } else if (['项目名称'].includes(h)) {
           col.width = 22;
@@ -323,8 +328,8 @@ async function handler(request, { params }) {
 
       logAudit(
         'EXPORT_EXCEL',
-        `导出了项目 "${project.project_name}" (施工号: ${project.construction_no}) 的 27 列标注质量管理 Excel 台账 (含 ${downloadedPhotosCount} 张缩略图)`,
-        { project_uuid: uuid, pipeline_uuid: pipelineUuid, records_count: totalRecords, photos_count: downloadedPhotosCount }
+        `导出了项目 "${project.project_name}" (施工号: ${project.construction_no}) 的标注质量管理 Excel 台账 (含 ${photoMap.size} 张缩略图)`,
+        { project_uuid: uuid, pipeline_uuids: pipelineUuids, records_count: totalRecords, photos_count: photoMap.size }
       );
 
       controller.close();

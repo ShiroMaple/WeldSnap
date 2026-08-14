@@ -16,8 +16,7 @@ const { setTraceField } = require('../../../../lib/trace');
 const { generatePresignedUrl } = require('../../../../services/upload.service');
 const { logger } = require('../../../../lib/logger');
 const db = require('../../../../lib/db');
-
-const VALID_PHOTO_TYPES = ['zudui', 'dadi', 'gaimian'];
+const photoTypes = require('../../../../lib/photo-types');
 
 async function handler(request) {
   let body;
@@ -42,7 +41,7 @@ async function handler(request) {
     );
   }
 
-  if (!VALID_PHOTO_TYPES.includes(photo_type)) {
+  if (!photoTypes.isValidKey(photo_type)) {
     return Response.json(
       {
         success: false,

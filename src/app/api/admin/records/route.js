@@ -7,6 +7,7 @@ export const dynamic = 'force-dynamic';
 const { withTrace } = require('../../../../middleware/withTrace');
 const { requireAdmin } = require('../../../../middleware/auth');
 const db = require('../../../../lib/db');
+const photoTypes = require('../../../../lib/photo-types');
 
 async function getHandler(request) {
   requireAdmin(request);
@@ -30,17 +31,19 @@ async function getHandler(request) {
   }
 
   if (filterStatus) {
+    const pipeline = db.getPipelineByUuid(pipelineUuid);
+    const project = pipeline
+      ? db.db.prepare('SELECT processes FROM projects WHERE id = ?').get(pipeline.project_id)
+      : null;
+    const keys = project ? photoTypes.parseProcessKeys(project.processes) : photoTypes.DEFAULT_PROCESS_KEYS;
+
     if (filterStatus === 'completed') {
-      welds = welds.filter(w => 
-        w.photo_zudui && !w.photo_zudui.startsWith('REJECTED:') &&
-        w.photo_dadi && !w.photo_dadi.startsWith('REJECTED:') &&
-        w.photo_gaimian && !w.photo_gaimian.startsWith('REJECTED:')
+      welds = welds.filter(w =>
+        keys.every(k => w[`photo_${k}`] && !w[`photo_${k}`].startsWith('REJECTED:'))
       );
     } else if (filterStatus === 'pending') {
-      welds = welds.filter(w => 
-        !w.photo_zudui || w.photo_zudui.startsWith('REJECTED:') ||
-        !w.photo_dadi || w.photo_dadi.startsWith('REJECTED:') ||
-        !w.photo_gaimian || w.photo_gaimian.startsWith('REJECTED:')
+      welds = welds.filter(w =>
+        keys.some(k => !w[`photo_${k}`] || w[`photo_${k}`].startsWith('REJECTED:'))
       );
     }
   }

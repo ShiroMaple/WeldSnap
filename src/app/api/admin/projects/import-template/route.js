@@ -21,6 +21,7 @@ async function handler(request) {
       '项目备注 (选填)': '一期重点工程项目',
       '管线号前缀 (选填)': 'PL',
       '焊口号前缀 (选填)': 'W',
+      '工序 (选填)': '组对,打底,盖面',
     },
     {
       '施工号 (必填)': 'SG-2026-002',
@@ -31,6 +32,7 @@ async function handler(request) {
       '项目备注 (选填)': '',
       '管线号前缀 (选填)': 'ETH',
       '焊口号前缀 (选填)': 'W',
+      '工序 (选填)': '组对,打底,盖面,内洁',
     },
   ];
 
@@ -44,6 +46,7 @@ async function handler(request) {
     { wch: 20 },
     { wch: 18 },
     { wch: 18 },
+    { wch: 26 },
   ];
 
   const workbook = XLSX.utils.book_new();
