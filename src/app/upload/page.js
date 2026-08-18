@@ -79,6 +79,10 @@ function UploadContent() {
     [processKeys]
   );
 
+  // 照片压缩与上传设置
+  const [compressConfig, setCompressConfig] = useState({ enabled: true, maxWidth: 1920, maxHeight: 1080, quality: 0.8 });
+  const [allowAlbumPhoto, setAllowAlbumPhoto] = useState(true);
+
   // 选中焊口的照片上传状态（动态 key）
   const [uploadedPhotos, setUploadedPhotos] = useState({});
   const [statusMsg, setStatusMsg] = useState({});
@@ -116,9 +120,6 @@ function UploadContent() {
 
   // 文件 Input Refs（动态挂载）
   const fileInputRefs = useRef({});
-
-  // 图片压缩配置
-  const [compressConfig, setCompressConfig] = useState({ enabled: true, maxWidth: 1920, maxHeight: 1080, quality: 0.8 });
 
   // ─── 移动端浏览器返回按键 (popstate) 与层级导航绑定 ────────────────
   const isPopStateNav = useRef(false);
@@ -194,11 +195,16 @@ function UploadContent() {
     initPage();
   }, [router, searchParams]);
 
-  // 拉取压缩设置
+  // 拉取压缩与上传设置
   useEffect(() => {
     fetch('/api/settings/compression')
       .then((r) => r.json())
-      .then((data) => { if (data.success) setCompressConfig(data.compression); })
+      .then((data) => {
+        if (data.success) {
+          if (data.compression) setCompressConfig(data.compression);
+          if (data.allowAlbumPhoto !== undefined) setAllowAlbumPhoto(data.allowAlbumPhoto);
+        }
+      })
       .catch(() => { });
   }, []);
 
@@ -1065,7 +1071,7 @@ function UploadContent() {
                         type="file"
                         ref={(el) => { fileInputRefs.current[type.key] = el; }}
                         accept="image/*"
-                        capture="environment"
+                        {...(!allowAlbumPhoto ? { capture: 'environment' } : {})}
                         onChange={(e) => handleCaptureAndUpload(type.key, e)}
                         className="hidden"
                       />

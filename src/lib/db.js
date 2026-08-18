@@ -893,6 +893,7 @@ const DEFAULT_SETTINGS = {
   excel_compress_max_width: '800',
   excel_compress_max_height: '600',
   excel_compress_quality: '0.8',
+  allow_album_photo: '1',
   server_public_url: '',
   log_level: 'info',
 };

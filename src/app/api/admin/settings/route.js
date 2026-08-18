@@ -56,6 +56,7 @@ async function getHandler(request) {
       oss: ossMeta,
       exportMode: 'OSS_DIRECT',
       server_public_url: compression.server_public_url || '',
+      allowAlbumPhoto: compression.allow_album_photo !== '0',
       compression: {
         enabled: compression.compress_enabled === '1',
         maxWidth: parseInt(compression.compress_max_width, 10),
@@ -84,9 +85,13 @@ async function postHandler(request) {
     return Response.json({ success: false, error: '请求体必须是 JSON' }, { status: 400 });
   }
 
-  const { compression, excelCompression, server_public_url } = body;
+  const { compression, excelCompression, server_public_url, allowAlbumPhoto } = body;
   if (server_public_url !== undefined) {
     db.setSetting('server_public_url', server_public_url.trim());
+  }
+
+  if (allowAlbumPhoto !== undefined) {
+    db.setSetting('allow_album_photo', allowAlbumPhoto ? '1' : '0');
   }
 
   if (compression) {
@@ -121,8 +126,8 @@ async function postHandler(request) {
 
   logAudit(
     'UPDATE_SETTINGS',
-    '更新了系统照片压缩参数与服务器域名配置',
-    { compression, excelCompression, server_public_url }
+    '更新了系统照片压缩、相册选择权限与服务器域名配置',
+    { compression, excelCompression, server_public_url, allowAlbumPhoto }
   );
 
   return Response.json({ success: true });

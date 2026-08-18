@@ -123,7 +123,8 @@ export default function AdminPage() {
   const [users, setUsers] = useState([]);
   const [settings, setSettings] = useState(null);
 
-  // ─── 照片压缩参数状态 (移动端上传) ─────────────────────────
+  // ─── 照片压缩与上传设置状态 (移动端上传) ─────────────────
+  const [allowAlbumPhoto, setAllowAlbumPhoto] = useState(true);
   const [compressEnabled, setCompressEnabled] = useState(true);
   const [compressMaxWidth, setCompressMaxWidth] = useState(1920);
   const [compressMaxHeight, setCompressMaxHeight] = useState(1080);
@@ -280,6 +281,9 @@ export default function AdminPage() {
             setExcelCompressMaxHeight(data.config.excelCompression.maxHeight);
             setExcelCompressQuality(data.config.excelCompression.quality);
           }
+          if (data.config.allowAlbumPhoto !== undefined) {
+            setAllowAlbumPhoto(data.config.allowAlbumPhoto);
+          }
           setServerPublicUrl(data.config.server_public_url || '');
         }
       }
@@ -294,6 +298,7 @@ export default function AdminPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           server_public_url: serverPublicUrl,
+          allowAlbumPhoto,
           compression: {
             enabled: compressEnabled,
             maxWidth: compressMaxWidth,
@@ -1379,7 +1384,28 @@ export default function AdminPage() {
 
                   <hr className="border-t border-[#e0e0e0]" />
 
-                  {/* 启停开关 */}
+                  {/* 允许从相册选择照片开关 */}
+                  <div className="flex items-center gap-3">
+                    <label className="text-[13px] text-[#161616] font-medium w-24">相册选图</label>
+                    <button
+                      type="button"
+                      onClick={() => setAllowAlbumPhoto(!allowAlbumPhoto)}
+                      className={`relative w-12 h-6 cursor-pointer transition-colors duration-200 border-none p-0 shrink-0 rounded-none ${allowAlbumPhoto ? 'bg-[#0f62fe]' : 'bg-[#8d8d8d]'
+                        }`}
+                    >
+                      <span
+                        className={`absolute top-[2px] left-0 w-5 h-5 bg-white transition-transform duration-200 ${allowAlbumPhoto ? 'translate-x-[26px]' : 'translate-x-[2px]'
+                          }`}
+                      />
+                    </button>
+                    <span className="text-[12px] text-[#525252]">
+                      {allowAlbumPhoto
+                        ? '允许（默认）：施工端拍照时可从手机相册选取历史照片'
+                        : '禁止：强制现场实时拍照（应用 capture="environment" 调起后置摄像头）'}
+                    </span>
+                  </div>
+
+                  {/* 启停压缩开关 */}
                   <div className="flex items-center gap-3">
                     <label className="text-[13px] text-[#161616] font-medium w-24">启用压缩</label>
                     <button

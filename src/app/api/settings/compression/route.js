@@ -13,6 +13,7 @@ async function handler() {
 
   return Response.json({
     success: true,
+    allowAlbumPhoto: settings.allow_album_photo !== '0',
     compression: {
       enabled: settings.compress_enabled === '1',
       maxWidth: parseInt(settings.compress_max_width, 10),
