@@ -44,10 +44,17 @@ async function postHandler(request) {
   const result = db.createPipeline(project_uuid, pipeline_no);
   if (result.success) {
     const proj = db.getProjectByUuid(project_uuid);
+    const projDesc = proj ? `在项目 "${proj.project_name}" (施工号: ${proj.construction_no || '-'}) ` : `在项目 [${project_uuid}] `;
     logAudit(
       'CREATE_PIPELINE',
-      `在项目 [${proj ? proj.project_name : project_uuid}] 下新建了管线号 [${result.pipeline_no}]`,
-      { project_uuid, pipeline_no: result.pipeline_no, uuid: result.uuid }
+      `${projDesc}下新建了管线号 [${result.pipeline_no}]`,
+      {
+        project_uuid,
+        project_name: proj?.project_name,
+        construction_no: proj?.construction_no,
+        pipeline_no: result.pipeline_no,
+        uuid: result.uuid
+      }
     );
     return Response.json(result);
   } else {

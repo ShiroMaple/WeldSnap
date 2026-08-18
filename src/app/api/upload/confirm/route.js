@@ -49,10 +49,19 @@ async function handler(request) {
     );
 
     const typeCN = photoTypes.getLabel(photo_type);
+    const projDesc = weld.project_name ? `在项目 "${weld.project_name}" (施工号: ${weld.construction_no || '-'}) ` : '';
     logAudit(
       'UPLOAD_PHOTO',
-      `为管线 [${weld.pipeline_no}] / 焊口 [${weld.weld_no}] 上传了 [${typeCN}] 工序照片`,
-      { weld_uuid, pipeline_no: weld.pipeline_no, weld_no: weld.weld_no, photo_type, objectKey }
+      `${projDesc}为管线 [${weld.pipeline_no}] / 焊口 [${weld.weld_no}] 上传了 [${typeCN}] 工序照片`,
+      {
+        project_name: weld.project_name,
+        construction_no: weld.construction_no,
+        weld_uuid,
+        pipeline_no: weld.pipeline_no,
+        weld_no: weld.weld_no,
+        photo_type,
+        objectKey
+      }
     );
 
     return Response.json({ success: true, objectKey });

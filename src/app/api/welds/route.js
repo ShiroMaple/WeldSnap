@@ -35,10 +35,18 @@ async function postHandler(request) {
   const result = db.createWeld(pipeline_uuid, weld_no, createSource);
   if (result.success) {
     const pipe = db.getPipelineByUuid(pipeline_uuid);
+    const projDesc = pipe && pipe.project_name ? `在项目 "${pipe.project_name}" (施工号: ${pipe.construction_no || '-'}) 的` : '在';
     logAudit(
       'CREATE_WELD',
-      `在管线 [${pipe ? pipe.pipeline_no : pipeline_uuid}] 下${createSource}了焊口号 [${result.weld_no}]`,
-      { pipeline_uuid, weld_no: result.weld_no, create_source: createSource, uuid: result.uuid }
+      `${projDesc}管线 [${pipe ? pipe.pipeline_no : pipeline_uuid}] 下${createSource}了焊口号 [${result.weld_no}]`,
+      {
+        project_name: pipe?.project_name,
+        construction_no: pipe?.construction_no,
+        pipeline_uuid,
+        weld_no: result.weld_no,
+        create_source: createSource,
+        uuid: result.uuid
+      }
     );
     return Response.json(result);
   } else {

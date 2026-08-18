@@ -6,6 +6,7 @@ export const dynamic = 'force-dynamic';
 
 const { withTrace } = require('../../../../middleware/withTrace');
 const { setSession } = require('../../../../lib/session');
+const { setTraceField } = require('../../../../lib/trace');
 const db = require('../../../../lib/db');
 const { logger } = require('../../../../lib/logger');
 const { logAudit } = require('../../../../lib/audit');
@@ -25,17 +26,21 @@ async function handler(request) {
 
   const user = db.verifyUser(username, password);
   if (!user) {
+    setTraceField('uploaded_by', username);
     logger.warn({ msg: 'auth.login_failed', username });
-    logAudit('USER_LOGIN_FAILED', `账号 "${username}" 尝试登录系统失败 (密码错误或账号不存在)`, { username });
+    logAudit('USER_LOGIN_FAILED', `尝试登录系统失败 (密码错误或账号不存在)`, { username });
     return Response.json({ success: false, error: '用户名或密码错误' }, { status: 400 });
   }
+
+  const operatorName = user.display_name || user.username;
+  setTraceField('uploaded_by', operatorName);
 
   logger.info({ msg: 'auth.login_success', username, role: user.role });
 
   const roleText = user.role === 'admin' ? '系统管理员' : user.role === 'project_admin' ? '项目管理员' : '施工人员';
   logAudit(
     'USER_LOGIN',
-    `用户 "${user.display_name || user.username}" (${roleText}) 登录了系统`,
+    `(${roleText}) 登录了系统`,
     { username: user.username, role: user.role }
   );
 

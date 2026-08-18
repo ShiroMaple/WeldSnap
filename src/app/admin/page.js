@@ -1400,8 +1400,8 @@ export default function AdminPage() {
                     </button>
                     <span className="text-[12px] text-[#525252]">
                       {allowAlbumPhoto
-                        ? '允许（默认）：施工端拍照时可从手机相册选取历史照片'
-                        : '禁止：强制现场实时拍照（应用 capture="environment" 调起后置摄像头）'}
+                        ? '允许：移动端拍照时可从手机相册选取历史照片'
+                        : '禁止：移动端拍照时强制现场实时拍照'}
                     </span>
                   </div>
 
@@ -1906,8 +1906,8 @@ export default function AdminPage() {
                     {exportingExcel
                       ? '正在生成包含照片的 Excel...'
                       : selectedPipelineUuids.length > 0
-                      ? `导出已选 ${selectedPipelineUuids.length} 条管线数据`
-                      : '导出项目完整数据'}
+                        ? `导出已选 ${selectedPipelineUuids.length} 条管线数据`
+                        : '导出项目完整数据'}
                   </span>
                 </button>
               </div>

@@ -42,9 +42,10 @@ async function handler(request) {
   try {
     const record = db.db
       .prepare(`
-        SELECT wr.*
+        SELECT wr.*, pr.project_name, pr.construction_no
         FROM weld_records wr
         JOIN pipelines p ON wr.pipeline_id = p.id
+        JOIN projects pr ON p.project_id = pr.id
         WHERE p.pipeline_no = ? AND wr.weld_no = ?
       `)
       .get(pipeline_no, weld_no);
@@ -82,10 +83,11 @@ async function handler(request) {
     const typeCN = photoTypes.getLabel(photo_type);
     logger.info({ msg: 'photo.deleted_by_admin', pipeline_no, weld_no, photo_type, ossKey });
 
+    const projDesc = record.project_name ? `在项目 "${record.project_name}" (施工号: ${record.construction_no || '-'}) ` : '';
     logAudit(
       'DELETE_PHOTO',
-      `彻底删除管线 [${pipeline_no}] / 焊口 [${weld_no}] 的 [${typeCN}] 工序照片及 OSS 对象 [${ossKey}]`,
-      { pipeline_no, weld_no, photo_type, ossKey }
+      `${projDesc}彻底删除管线 [${pipeline_no}] / 焊口 [${weld_no}] 的 [${typeCN}] 工序照片及 OSS 对象 [${ossKey}]`,
+      { project_name: record.project_name, construction_no: record.construction_no, pipeline_no, weld_no, photo_type, ossKey }
     );
 
     return Response.json({ success: true, message: '照片及 OSS 对象已彻底删除' });

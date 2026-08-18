@@ -10,6 +10,7 @@ export const dynamic = 'force-dynamic';
 
 const { withTrace } = require('../../../../middleware/withTrace');
 const { setSession } = require('../../../../lib/session');
+const { setTraceField } = require('../../../../lib/trace');
 const db = require('../../../../lib/db');
 const { logger } = require('../../../../lib/logger');
 const { logAudit } = require('../../../../lib/audit');
@@ -83,6 +84,7 @@ async function handler(request) {
       .get(username);
 
     isNewAccount = true;
+    setTraceField('uploaded_by', finalDisplayName);
     logger.info({ msg: 'auth.anonymous_created', username, displayName: finalDisplayName });
 
     logAudit(
@@ -110,6 +112,7 @@ async function handler(request) {
 
       user.display_name = finalDisplayName;
       isNameUpdated = true;
+      setTraceField('uploaded_by', finalDisplayName);
       logger.info({ msg: 'auth.anonymous_name_updated', username, displayName: finalDisplayName });
 
       logAudit(
@@ -117,6 +120,8 @@ async function handler(request) {
         `将简易账户 (${username}) 的姓名更新为 "${finalDisplayName}"`,
         { username, display_name: finalDisplayName }
       );
+    } else {
+      setTraceField('uploaded_by', user.display_name || user.username);
     }
 
     logger.info({ msg: 'auth.anonymous_login_success', username });
@@ -126,7 +131,7 @@ async function handler(request) {
   if (!isNewAccount && !isNameUpdated) {
     logAudit(
       'USER_LOGIN',
-      `施工人员 "${user.display_name || user.username}" 登录了系统`,
+      `登录了系统`,
       { username: user.username, role: user.role, type: 'ANONYMOUS' }
     );
   }

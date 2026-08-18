@@ -108,12 +108,16 @@ async function getHandler(request) {
       const urlStr = (item.url || '').toLowerCase();
       const userStr = (item.uploaded_by || '').toLowerCase();
       const pipelineStr = (item.pipeline_no || '').toLowerCase();
+      const projectStr = (item.project_name || '').toLowerCase();
+      const constructionStr = (item.construction_no || '').toLowerCase();
       const errStr = item.err ? JSON.stringify(item.err).toLowerCase() : '';
       if (
         !msgStr.includes(keyword) &&
         !urlStr.includes(keyword) &&
         !userStr.includes(keyword) &&
         !pipelineStr.includes(keyword) &&
+        !projectStr.includes(keyword) &&
+        !constructionStr.includes(keyword) &&
         !errStr.includes(keyword)
       ) {
         return false;

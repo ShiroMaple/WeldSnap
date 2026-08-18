@@ -32,13 +32,14 @@ async function putHandler(request, { params }) {
   }
 
   const oldPipe = db.getPipelineByUuid(uuid);
+  const projDesc = oldPipe && oldPipe.project_name ? `在项目 "${oldPipe.project_name}" (施工号: ${oldPipe.construction_no || '-'}) ` : '';
 
   const result = db.updatePipeline(uuid, pipeline_no);
   if (result.success) {
     logAudit(
       'UPDATE_PIPELINE',
-      `修改了管线号: ${oldPipe ? `[${oldPipe.pipeline_no}] -> ` : ''}[${pipeline_no.trim()}]`,
-      { uuid, oldNo: oldPipe?.pipeline_no, newNo: pipeline_no.trim() }
+      `${projDesc}修改了管线号: ${oldPipe ? `[${oldPipe.pipeline_no}] -> ` : ''}[${pipeline_no.trim()}]`,
+      { uuid, project_name: oldPipe?.project_name, construction_no: oldPipe?.construction_no, oldNo: oldPipe?.pipeline_no, newNo: pipeline_no.trim() }
     );
     return Response.json(result);
   } else {
@@ -55,13 +56,14 @@ async function deleteHandler(request, { params }) {
   }
 
   const oldPipe = db.getPipelineByUuid(uuid);
+  const projDesc = oldPipe && oldPipe.project_name ? `在项目 "${oldPipe.project_name}" (施工号: ${oldPipe.construction_no || '-'}) ` : '';
 
   const result = db.deletePipeline(uuid);
   if (result.success) {
     logAudit(
       'DELETE_PIPELINE',
-      `删除了管线号 [${oldPipe ? oldPipe.pipeline_no : uuid}]`,
-      { uuid, pipeline_no: oldPipe?.pipeline_no }
+      `${projDesc}删除了管线号 [${oldPipe ? oldPipe.pipeline_no : uuid}]`,
+      { uuid, project_name: oldPipe?.project_name, construction_no: oldPipe?.construction_no, pipeline_no: oldPipe?.pipeline_no }
     );
     return Response.json(result);
   } else {

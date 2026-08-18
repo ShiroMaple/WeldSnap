@@ -101,12 +101,12 @@ async function handler(request) {
   const result = db.importWeldRecords(records, projectUuid);
 
   const project = db.getProjectByUuid(projectUuid);
-  const projName = project ? project.project_name : '指定项目';
+  const projDesc = project ? `至项目 "${project.project_name}" (施工号: ${project.construction_no || '-'}) ` : `至项目 [${projectUuid}] `;
 
   logAudit(
     'IMPORT_WELD_RECORDS_EXCEL',
-    `通过 Excel 批量导入管线与焊口台账至 "${projName}" (解析: ${records.length} 条, 新增: ${result.inserted || 0} 条, 跳过: ${result.skipped || 0} 条)`,
-    { project_uuid: projectUuid, ...result }
+    `通过 Excel 批量导入管线与焊口台账${projDesc}(解析: ${records.length} 条, 新增: ${result.inserted || 0} 条, 跳过: ${result.skipped || 0} 条)`,
+    { project_uuid: projectUuid, project_name: project?.project_name, construction_no: project?.construction_no, ...result }
   );
 
   return Response.json({

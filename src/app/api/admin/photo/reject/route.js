@@ -38,9 +38,10 @@ async function handler(request) {
   try {
     const record = db.db
       .prepare(`
-        SELECT wr.*
+        SELECT wr.*, pr.project_name, pr.construction_no
         FROM weld_records wr
         JOIN pipelines p ON wr.pipeline_id = p.id
+        JOIN projects pr ON p.project_id = pr.id
         WHERE p.pipeline_no = ? AND wr.weld_no = ?
       `)
       .get(pipeline_no, weld_no);
@@ -69,10 +70,11 @@ async function handler(request) {
     logger.info({ msg: 'photo.rejected_by_admin', pipeline_no, weld_no, photo_type });
 
     const typeCN = photoTypes.getLabel(photo_type);
+    const projDesc = record.project_name ? `在项目 "${record.project_name}" (施工号: ${record.construction_no || '-'}) ` : '';
     logAudit(
       'REJECT_PHOTO',
-      `将管线 [${pipeline_no}] / 焊口 [${weld_no}] 的 [${typeCN}] 工序照片标记为不合格`,
-      { pipeline_no, weld_no, photo_type }
+      `${projDesc}将管线 [${pipeline_no}] / 焊口 [${weld_no}] 的 [${typeCN}] 工序照片标记为不合格`,
+      { project_name: record.project_name, construction_no: record.construction_no, pipeline_no, weld_no, photo_type }
     );
 
     return Response.json({ success: true });

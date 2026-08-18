@@ -5,11 +5,16 @@ export const dynamic = 'force-dynamic';
  */
 
 const { withTrace } = require('../../../../middleware/withTrace');
-const { clearSession } = require('../../../../lib/session');
+const { clearSession, getSession } = require('../../../../lib/session');
+const { setTraceField } = require('../../../../lib/trace');
 const { logger } = require('../../../../lib/logger');
 const { logAudit } = require('../../../../lib/audit');
 
 async function handler(request) {
+  const session = getSession(request.headers);
+  if (session) {
+    setTraceField('uploaded_by', session.display_name || session.username);
+  }
   logger.info({ msg: 'auth.logout' });
   logAudit('USER_LOGOUT', '登出了系统');
 

@@ -37,3 +37,6 @@ out/
 Thumbs.db
 .vscode/
 .idea/
+
+# cairn init: git_policy is ignore
+cairn/
