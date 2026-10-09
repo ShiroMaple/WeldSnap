@@ -25,6 +25,7 @@ export default function WeldMatrix({
   onBusyChange = () => { },
   currentUser = {},
   pipelineUuid = '',
+  pipelineUuids = [],
   projectInfo = { pipeline_prefix: '', weld_prefix: '', construction_no: '', project_name: '' },
   processKeys = [],
 }) {
@@ -188,7 +189,7 @@ export default function WeldMatrix({
     return true;
   });
 
-  // 2. 计算排序后的焊口列表 (默认及按焊口号排序均采用数值优先自然排序)
+  // 2. 计算排序后的焊口列表 (默认及按焊口号排序均采用数值优先自然排序；跨管线时先按管线号排)
   const sortedRecords = [...filteredRecords].sort((a, b) => {
     if (sortKey === 'uploaded_at') {
       const valA = a.uploaded_at || '';
@@ -199,6 +200,10 @@ export default function WeldMatrix({
       const cmp = valA.localeCompare(valB);
       return sortDirection === 'desc' ? -cmp : cmp;
     } else {
+      const pipeCmp = (a.pipeline_no || '').localeCompare(b.pipeline_no || '', undefined, { numeric: true, sensitivity: 'base' });
+      if (pipeCmp !== 0) {
+        return sortDirection === 'desc' ? -pipeCmp : pipeCmp;
+      }
       const cmp = compareWeldNo(a.weld_no, b.weld_no);
       return sortDirection === 'desc' ? -cmp : cmp;
     }
@@ -579,23 +584,29 @@ export default function WeldMatrix({
         {/* 第一行：添加焊口与批量操作按钮 */}
         <div className="flex justify-between items-center w-full">
           {/* 1. 添加焊口 */}
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              value={newWeldName}
-              onChange={(e) => setNewWeldName(e.target.value)}
-              placeholder={projectInfo.weld_prefix ? "自定义焊口号" : "输入新增焊口号"}
-              disabled={addingWeld}
-              className="h-8 px-3 bg-white border border-[#c6c6c6] text-[12px] outline-none focus:border-[#0f62fe] rounded-none w-44 placeholder-[#8d8d8d] font-sans"
-            />
-            <button
-              onClick={handleAddWeld}
-              disabled={addingWeld}
-              className="h-8 px-4 bg-[#0f62fe] hover:bg-[#0353e9] text-white text-[12px] font-medium cursor-pointer rounded-none border-none outline-none"
-            >
-              {addingWeld ? '添加中...' : `+ 添加焊口`}
-            </button>
-          </div>
+          {pipelineUuids.length > 1 ? (
+            <div className="text-[12px] text-[#8d8d8d] italic flex items-center h-8">
+              当前为多管线集合视图，请在左侧单选特定管线后快捷新增焊口
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={newWeldName}
+                onChange={(e) => setNewWeldName(e.target.value)}
+                placeholder={projectInfo.weld_prefix ? "自定义焊口号" : "输入新增焊口号"}
+                disabled={addingWeld}
+                className="h-8 px-3 bg-white border border-[#c6c6c6] text-[12px] outline-none focus:border-[#0f62fe] rounded-none w-44 placeholder-[#8d8d8d] font-sans"
+              />
+              <button
+                onClick={handleAddWeld}
+                disabled={addingWeld || !pipelineUuid}
+                className="h-8 px-4 bg-[#0f62fe] hover:bg-[#0353e9] text-white text-[12px] font-medium cursor-pointer rounded-none border-none outline-none disabled:opacity-50"
+              >
+                {addingWeld ? '添加中...' : `+ 添加焊口`}
+              </button>
+            </div>
+          )}
 
           {/* 2. 批量操作按钮 */}
           <div className="flex items-center gap-2">
@@ -642,7 +653,7 @@ export default function WeldMatrix({
       <div className="flex-1 overflow-auto p-6 relative">
         {records.length === 0 ? (
           <div className="h-full flex items-center justify-center text-[#8d8d8d] text-[14px] select-none">
-            该管线号下暂无焊口数据，请在右侧新增或通过左侧导入 Excel
+            所选管线暂无焊口数据，请在左侧选择管线或导入 Excel
           </div>
         ) : sortedRecords.length === 0 ? (
           <div className="h-full flex items-center justify-center text-[#8d8d8d] text-[14px] select-none">
@@ -656,6 +667,7 @@ export default function WeldMatrix({
                   <th className="pb-3 pr-4 font-medium w-10">
                     {/* 复选框占位 */}
                   </th>
+                  <th className="pb-3 px-4 font-medium">管线号</th>
                   <th
                     id="weld-no-header"
                     onClick={() => toggleSort('weld_no')}
@@ -740,6 +752,9 @@ export default function WeldMatrix({
                           onChange={() => handleToggleSelectWeld(r.uuid)}
                           className="w-4 h-4 cursor-pointer rounded-none accent-[#0f62fe]"
                         />
+                      </td>
+                      <td className="py-3.5 px-4 font-medium text-[#161616] truncate max-w-[160px]" title={r.pipeline_no || ''}>
+                        {r.pipeline_no || '-'}
                       </td>
                       <td className="py-3.5 px-4 font-medium flex items-center gap-2">
                         {editingUuid === r.uuid ? (

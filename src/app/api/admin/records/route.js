@@ -13,13 +13,16 @@ async function getHandler(request) {
   requireAdmin(request);
 
   const { searchParams } = new URL(request.url);
-  const pipelineUuid = searchParams.get('pipeline_uuid');
+  const rawUuids = searchParams.get('pipeline_uuids') || searchParams.get('pipeline_uuid');
+  const pipelineUuids = rawUuids
+    ? rawUuids.split(',').map(s => s.trim()).filter(Boolean)
+    : [];
 
-  if (!pipelineUuid) {
-    return Response.json({ success: false, error: '缺少 pipeline_uuid 参数' }, { status: 400 });
+  if (pipelineUuids.length === 0) {
+    return Response.json({ success: false, error: '缺少 pipeline_uuid 或 pipeline_uuids 参数' }, { status: 400 });
   }
 
-  let welds = db.listWelds(pipelineUuid);
+  let welds = db.listWeldsByPipelines(pipelineUuids);
 
   // 前端过滤参数
   const filterWeld = searchParams.get('weld_no');
@@ -31,9 +34,9 @@ async function getHandler(request) {
   }
 
   if (filterStatus) {
-    const pipeline = db.getPipelineByUuid(pipelineUuid);
-    const project = pipeline
-      ? db.db.prepare('SELECT processes FROM projects WHERE id = ?').get(pipeline.project_id)
+    const samplePipeline = db.getPipelineByUuid(pipelineUuids[0]);
+    const project = samplePipeline
+      ? db.db.prepare('SELECT processes FROM projects WHERE id = ?').get(samplePipeline.project_id)
       : null;
     const keys = project ? photoTypes.parseProcessKeys(project.processes) : photoTypes.DEFAULT_PROCESS_KEYS;
 

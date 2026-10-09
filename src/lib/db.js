@@ -523,14 +523,22 @@ function deletePipeline(uuid) {
 
 // ─── 焊口 (Weld Records) 业务操作 ─────────────────────────
 function listWelds(pipelineUuid) {
+  return listWeldsByPipelines([pipelineUuid]);
+}
+
+function listWeldsByPipelines(pipelineUuids) {
+  if (!pipelineUuids || pipelineUuids.length === 0) return [];
+  const validUuids = pipelineUuids.filter(Boolean);
+  if (validUuids.length === 0) return [];
+  const placeholders = validUuids.map(() => '?').join(',');
   return db.prepare(`
     SELECT w.*, p.pipeline_no, pr.uuid as project_uuid
     FROM weld_records w
     JOIN pipelines p ON w.pipeline_id = p.id
     JOIN projects pr ON p.project_id = pr.id
-    WHERE p.uuid = ?
-    ORDER BY w.weld_no ASC
-  `).all(pipelineUuid);
+    WHERE p.uuid IN (${placeholders})
+    ORDER BY p.pipeline_no ASC, w.weld_no ASC
+  `).all(...validUuids);
 }
 
 function getWeldByUuid(uuid) {
@@ -1119,6 +1127,7 @@ module.exports = {
 
   // Welds
   listWelds,
+  listWeldsByPipelines,
   getWeldByUuid,
   getWeldByPipelineAndWeldNo,
   createWeld,

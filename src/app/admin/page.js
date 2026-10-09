@@ -79,6 +79,9 @@ export default function AdminPage() {
   const [selectedPipelineUuid, setSelectedPipelineUuid] = useState('');
   const [selectedPipelineNo, setSelectedPipelineNo] = useState('');
   const [selectedPipelineUuids, setSelectedPipelineUuids] = useState([]);
+  const activePipelineUuids = selectedPipelineUuids.length > 0
+    ? selectedPipelineUuids
+    : (selectedPipelineUuid ? [selectedPipelineUuid] : []);
   const [weldRecords, setWeldRecords] = useState([]);
   const [exportingExcel, setExportingExcel] = useState(false);
 
@@ -234,8 +237,17 @@ export default function AdminPage() {
     } catch { }
   };
 
-  const fetchRecords = async (pipelineUuid, overrideWeld, overrideStatus) => {
-    if (!pipelineUuid) {
+  const fetchRecords = async (targetUuids, overrideWeld, overrideStatus) => {
+    let uuids = [];
+    if (Array.isArray(targetUuids)) {
+      uuids = targetUuids.filter(Boolean);
+    } else if (typeof targetUuids === 'string' && targetUuids) {
+      uuids = [targetUuids];
+    } else {
+      uuids = activePipelineUuids;
+    }
+
+    if (uuids.length === 0) {
       setWeldRecords([]);
       return;
     }
@@ -243,7 +255,7 @@ export default function AdminPage() {
     const currentStatus = overrideStatus !== undefined ? overrideStatus : filtersRef.current.filterStatus;
 
     const params = new URLSearchParams();
-    params.set('pipeline_uuid', pipelineUuid);
+    params.set('pipeline_uuids', uuids.join(','));
     if (currentWeld) params.set('weld_no', currentWeld);
     if (currentStatus) params.set('status', currentStatus);
 
@@ -346,25 +358,27 @@ export default function AdminPage() {
     }
   }, [activeTab, selectedProjectUuid]);
 
+  const activePipelineUuidsKey = activePipelineUuids.join(',');
+
   useEffect(() => {
-    if (selectedPipelineUuid) {
-      fetchRecords(selectedPipelineUuid);
+    if (activePipelineUuids.length > 0) {
+      fetchRecords(activePipelineUuids);
     } else {
       setWeldRecords([]);
     }
-  }, [selectedPipelineUuid, filterWeld, filterStatus]);
+  }, [activePipelineUuidsKey, filterWeld, filterStatus]);
 
   // ─── 默认 60s 自动刷新定时轮询 ─────────────────────────
   useEffect(() => {
-    if (!selectedPipelineUuid) return;
+    if (activePipelineUuids.length === 0) return;
 
     const timer = setInterval(() => {
-      fetchRecords(selectedPipelineUuid);
+      fetchRecords(activePipelineUuids);
       fetchStats(selectedProjectUuid);
     }, 60000);
 
     return () => clearInterval(timer);
-  }, [selectedPipelineUuid, selectedProjectUuid]);
+  }, [activePipelineUuidsKey, selectedProjectUuid]);
 
   // ─── 项目增删改操作 ──────────────────────────────────────
   const handleSelectProject = (project) => {
@@ -1076,9 +1090,14 @@ export default function AdminPage() {
 
                     {/* 焊口过滤检索区 (统一高度为 h-16) */}
                     <div className="h-16 px-4 border-b border-[#e0e0e0] bg-[#f4f4f4] flex items-center justify-between select-none">
-                      {selectedPipelineUuid ? (
+                      {activePipelineUuids.length > 0 ? (
                         <>
                           <div className="flex items-center gap-3 flex-wrap">
+                            {activePipelineUuids.length > 1 && (
+                              <span className="text-[12px] bg-[#0f62fe]/10 text-[#0f62fe] px-2 py-1 font-medium select-none shrink-0">
+                                已选 {activePipelineUuids.length} 条管线集合
+                              </span>
+                            )}
                             <div className="flex items-center gap-2">
                               <span className="text-[12px] text-[#525252] font-medium">焊口筛选:</span>
                               <input
@@ -1162,7 +1181,7 @@ export default function AdminPage() {
 
                           <button
                             onClick={() => {
-                              fetchRecords(selectedPipelineUuid);
+                              fetchRecords(activePipelineUuids);
                               fetchStats(selectedProjectUuid);
                               if (selectedProjectUuid) fetchPipelines(selectedProjectUuid);
                             }}
@@ -1194,12 +1213,13 @@ export default function AdminPage() {
                       uploadEndDate={uploadEndDate}
                       is24hActive={is24hActive}
                       onRefresh={() => {
-                        fetchRecords(selectedPipelineUuid);
+                        fetchRecords(activePipelineUuids);
                         fetchStats(selectedProjectUuid);
                         if (selectedProjectUuid) fetchPipelines(selectedProjectUuid);
                       }}
                       currentUser={currentUser}
-                      pipelineUuid={selectedPipelineUuid}
+                      pipelineUuid={activePipelineUuids.length === 1 ? activePipelineUuids[0] : ''}
+                      pipelineUuids={activePipelineUuids}
                       projectInfo={selectedProject}
                       processKeys={parseProcessKeys(selectedProject)}
                     />

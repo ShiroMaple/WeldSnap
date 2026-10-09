@@ -60,7 +60,7 @@ async function handler(request) {
         const val = w[field];
         if (val && !val.startsWith('REJECTED:')) {
           const typeName = photoTypes.getLabel(typeKey);
-          const filename = `${pNo}-${wNo}-${typeName}.jpg`;
+          const filename = `${pNo}/${pNo}-${wNo}-${typeName}.jpg`;
           
           // 生成限时一小时的 GET 签名预览/下载 URL
           const signedUrl = client.signatureUrl(val, {
@@ -71,6 +71,7 @@ async function handler(request) {
           manifest.push({
             url: signedUrl,
             filename,
+            pipeline_no: pNo,
           });
         }
       };
